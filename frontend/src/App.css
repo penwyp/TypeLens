@@ -3,21 +3,21 @@
   display: grid;
   grid-template-columns: 340px 1fr;
   background:
-    radial-gradient(circle at top left, rgba(255, 161, 89, 0.24), transparent 30%),
-    radial-gradient(circle at right 20%, rgba(59, 130, 246, 0.18), transparent 28%),
-    linear-gradient(135deg, #08111f 0%, #0c1728 50%, #10233a 100%);
+    radial-gradient(circle at top left, rgba(210, 160, 84, 0.18), transparent 32%),
+    radial-gradient(circle at right 20%, rgba(126, 158, 210, 0.16), transparent 28%),
+    linear-gradient(145deg, #07101b 0%, #0b1623 52%, #132234 100%);
   color: #f3f6fb;
 }
 
 .sidebar {
-  padding: 28px 22px;
+  padding: 32px 24px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(8, 17, 31, 0.88), rgba(8, 17, 31, 0.66));
-  backdrop-filter: blur(14px);
+  background: linear-gradient(180deg, rgba(9, 17, 29, 0.9), rgba(9, 17, 29, 0.72));
+  backdrop-filter: blur(18px);
 }
 
 .brand-block {
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .brand-kicker,
@@ -30,9 +30,10 @@
 }
 
 .brand-block h1 {
-  margin: 10px 0 10px;
-  font-size: 34px;
-  line-height: 1.05;
+  margin: 10px 0 8px;
+  font-size: 36px;
+  line-height: 1.02;
+  letter-spacing: -0.04em;
 }
 
 .brand-block p,
@@ -48,36 +49,104 @@
 .panel,
 .notice {
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 }
 
 .config-panel,
 .panel {
-  border-radius: 22px;
-  padding: 18px;
+  border-radius: 24px;
+  padding: 20px;
 }
 
 .config-panel {
   display: grid;
-  gap: 14px;
+  gap: 16px;
+}
+
+.hero-panel {
+  align-content: start;
+}
+
+.metric-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.metric-card {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.metric-card strong {
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.metric-card span {
+  color: rgba(233, 240, 255, 0.72);
+  font-size: 13px;
 }
 
 .workspace {
-  padding: 24px;
+  padding: 28px;
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 18px;
+  gap: 20px;
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-radius: 22px;
-  padding: 18px 22px;
-  background: rgba(255, 255, 255, 0.06);
+  gap: 16px;
+  border-radius: 24px;
+  padding: 20px 24px;
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.topbar-copy {
+  min-width: 0;
+}
+
+.topbar-title {
+  margin-top: 8px;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.summary-pill {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: rgba(3, 8, 15, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.summary-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8fb9ff;
+}
+
+.summary-pill strong {
+  font-size: 14px;
 }
 
 .tabs {
@@ -85,7 +154,7 @@
   gap: 10px;
   padding: 6px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .tab {
@@ -106,7 +175,7 @@
 .content-grid {
   display: grid;
   grid-template-columns: 1.3fr 0.9fr;
-  gap: 18px;
+  gap: 20px;
   min-height: 0;
 }
 
@@ -116,7 +185,7 @@
 
 .panel-stack {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .panel-wide,
@@ -140,11 +209,11 @@
 .panel-header h2 {
   margin: 0 0 6px;
   font-size: 22px;
+  letter-spacing: -0.03em;
 }
 
 .button-row,
-.form-row,
-.path-row {
+.form-row {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -172,6 +241,30 @@ label span {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #9db6da;
+}
+
+.file-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(4, 9, 17, 0.44);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.file-card-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8fb9ff;
+}
+
+.file-card-value {
+  margin-top: 6px;
+  font-size: 15px;
+  color: #f4f7fd;
 }
 
 input,
@@ -277,7 +370,7 @@ button:disabled {
 .summary-box,
 .empty-state,
 .log-console {
-  border-radius: 18px;
+  border-radius: 20px;
   background: rgba(4, 9, 17, 0.44);
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
@@ -318,7 +411,7 @@ button:disabled {
 }
 
 .history-card {
-  padding: 16px;
+  padding: 18px;
 }
 
 .history-card-top {
@@ -354,6 +447,21 @@ button:disabled {
 @media (max-width: 1120px) {
   #app-shell {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .topbar,
+  .topbar-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .summary-pill {
+    min-width: 0;
   }
 
   .content-grid,

@@ -10,7 +10,6 @@ import {
   QueryHistory,
   ResetDictionary,
   SelectTextFile,
-  SetConfig,
 } from '../wailsjs/go/main/App';
 import { service, typeless } from '../wailsjs/go/models';
 import { EventsOn } from '../wailsjs/runtime/runtime';
@@ -71,21 +70,6 @@ function App() {
       const nextWords = await loadWords();
       setWords(nextWords);
       setNotice({ kind: 'info', text: `已连接 Typeless，当前词典 ${nextWords.length} 条。` });
-    } catch (error) {
-      setNotice({ kind: 'error', text: stringifyError(error) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveConfig(event: FormEvent) {
-    event.preventDefault();
-    try {
-      setBusy(true);
-      await SetConfig(config);
-      setNotice({ kind: 'success', text: '配置已保存。' });
-      const nextWords = await loadWords();
-      setWords(nextWords);
     } catch (error) {
       setNotice({ kind: 'error', text: stringifyError(error) });
     } finally {
@@ -238,47 +222,42 @@ function App() {
     return await ListDictionaryWords();
   }
 
+  const statusText = busy ? '正在处理请求…' : '本机数据已接入。';
+  const importFileLabel = summarizePath(importPath, '选择文件');
+  const resetFileLabel = summarizePath(resetPath, '使用内置词表');
+  const readyState = config.userDataPath && config.dbPath ? '自动连接已就绪' : '等待本机环境准备完成';
+  const historyContextLabel = historyQuery.contextMode === 'all'
+    ? '全部应用'
+    : historyQuery.contextMode === 'latest'
+      ? '最近一次来源'
+      : '当前前台应用';
+
   return (
     <div id="app-shell">
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-kicker">TypeLens</div>
-          <h1>Typeless 的桌面控制台</h1>
-          <p>共享 Go service，保留 CLI，同步支持词典管理与历史查询/复制。</p>
+          <h1>Typeless 工作台</h1>
+          <p>{readyState}</p>
         </div>
 
-        <form className="config-panel" onSubmit={saveConfig}>
-          <div className="section-title">连接配置</div>
-
-          <label>
-            <span>User Data</span>
-            <input value={config.userDataPath} onChange={(event) => setConfig({ ...config, userDataPath: event.target.value })} />
-          </label>
-
-          <label>
-            <span>History DB</span>
-            <input value={config.dbPath} onChange={(event) => setConfig({ ...config, dbPath: event.target.value })} />
-          </label>
-
-          <label>
-            <span>API Host</span>
-            <input value={config.apiHost} onChange={(event) => setConfig({ ...config, apiHost: event.target.value })} />
-          </label>
-
-          <label>
-            <span>Timeout</span>
-            <input
-              type="number"
-              min={1}
-              value={config.timeoutSec}
-              onChange={(event) => setConfig({ ...config, timeoutSec: Number(event.target.value) || 15 })}
-            />
-          </label>
-
-          <button className="primary-button" disabled={busy} type="submit">
-            保存配置
-          </button>
-        </form>
+        <section className="config-panel hero-panel">
+          <div className="section-title">概览</div>
+          <div className="metric-grid">
+            <article className="metric-card">
+              <strong>{words.length}</strong>
+              <span>当前词条</span>
+            </article>
+            <article className="metric-card">
+              <strong>{records.length}</strong>
+              <span>已载入历史</span>
+            </article>
+            <article className="metric-card">
+              <strong>{dictionaryLogs.length}</strong>
+              <span>运行日志</span>
+            </article>
+          </div>
+        </section>
 
         {notice ? <div className={`notice notice-${notice.kind}`}>{notice.text}</div> : null}
       </aside>
@@ -286,17 +265,24 @@ function App() {
       <main className="workspace">
         <header className="topbar">
           <div className="topbar-copy">
-            <div className="eyebrow">Desktop + CLI</div>
-            <div className="status-line">{busy ? '正在处理请求…' : '已就绪，可直接操作词典与历史。'}</div>
+            <div className="eyebrow">Desktop Console</div>
+            <div className="topbar-title">所见即所得</div>
+            <div className="status-line">{statusText}</div>
           </div>
 
-          <div className="tabs">
-            <button className={activeView === 'dictionary' ? 'tab active' : 'tab'} onClick={() => setActiveView('dictionary')}>
-              词典
-            </button>
-            <button className={activeView === 'history' ? 'tab active' : 'tab'} onClick={() => setActiveView('history')}>
-              历史
-            </button>
+          <div className="topbar-actions">
+            <div className="summary-pill">
+              <span className="summary-label">当前模式</span>
+              <strong>{activeView === 'dictionary' ? '词典管理' : `历史检索 · ${historyContextLabel}`}</strong>
+            </div>
+            <div className="tabs">
+              <button className={activeView === 'dictionary' ? 'tab active' : 'tab'} onClick={() => setActiveView('dictionary')}>
+                词典
+              </button>
+              <button className={activeView === 'history' ? 'tab active' : 'tab'} onClick={() => setActiveView('history')}>
+                历史
+              </button>
+            </div>
           </div>
         </header>
 
@@ -306,7 +292,7 @@ function App() {
               <div className="panel-header">
                 <div>
                   <h2>词典总览</h2>
-                  <p>当前词典共 {words.length} 条，支持删除、导入和差量重置。</p>
+                  <p>共 {words.length} 条</p>
                 </div>
                 <div className="button-row">
                   <button className="ghost-button" disabled={busy} onClick={() => void refreshWords()}>
@@ -337,10 +323,7 @@ function App() {
             <div className="panel-stack">
               <form className="panel" onSubmit={addTerm}>
                 <div className="panel-header narrow">
-                  <div>
-                    <h2>新增词条</h2>
-                    <p>直接调用 Go 后端新增单个词。</p>
-                  </div>
+                  <div><h2>新增词条</h2></div>
                 </div>
                 <div className="form-row">
                   <input value={newTerm} onChange={(event) => setNewTerm(event.target.value)} placeholder="例如: Claude Code" />
@@ -350,14 +333,14 @@ function App() {
 
               <form className="panel" onSubmit={importWords}>
                 <div className="panel-header narrow">
-                  <div>
-                    <h2>导入文件</h2>
-                    <p>先远端 list，再规范化去重，支持并发导入。</p>
-                  </div>
+                  <div><h2>导入文件</h2></div>
                 </div>
-                <div className="path-row">
-                  <input value={importPath} onChange={(event) => setImportPath(event.target.value)} placeholder="/path/to/typeless-words.txt" />
-                  <button className="ghost-button" disabled={busy} onClick={() => void selectPath('import')} type="button">选择</button>
+                <div className="file-card">
+                  <div>
+                    <div className="file-card-label">待导入文件</div>
+                    <div className="file-card-value">{importFileLabel}</div>
+                  </div>
+                  <button className="ghost-button" disabled={busy} onClick={() => void selectPath('import')} type="button">选择文件</button>
                 </div>
                 <div className="form-grid two">
                   <label>
@@ -379,14 +362,14 @@ function App() {
 
               <form className="panel" onSubmit={resetWords}>
                 <div className="panel-header narrow">
-                  <div>
-                    <h2>差量重置</h2>
-                    <p>不再全删全建，只删除多余词并补充缺失词。</p>
-                  </div>
+                  <div><h2>差量重置</h2></div>
                 </div>
-                <div className="path-row">
-                  <input value={resetPath} onChange={(event) => setResetPath(event.target.value)} placeholder="留空则使用内置默认词" />
-                  <button className="ghost-button" disabled={busy} onClick={() => void selectPath('reset')} type="button">选择</button>
+                <div className="file-card">
+                  <div>
+                    <div className="file-card-label">目标词表</div>
+                    <div className="file-card-value">{resetFileLabel}</div>
+                  </div>
+                  <button className="ghost-button" disabled={busy} onClick={() => void selectPath('reset')} type="button">选择文件</button>
                 </div>
                 <label>
                   <span>并发</span>
@@ -402,10 +385,7 @@ function App() {
 
               <div className="panel">
                 <div className="panel-header narrow">
-                  <div>
-                    <h2>运行日志</h2>
-                    <p>导入、清空、差量重置都会把后台日志实时推送到这里。</p>
-                  </div>
+                  <div><h2>运行日志</h2></div>
                 </div>
                 <div className="log-console">
                   {dictionaryLogs.length > 0 ? dictionaryLogs.map((line, index) => (
@@ -421,13 +401,13 @@ function App() {
               <div className="panel-header">
                 <div>
                   <h2>历史查询</h2>
-                  <p>支持 frontmost/latest/all 上下文，关键字与正则过滤。</p>
+                  <p>按范围筛选</p>
                 </div>
                 <button className="primary-button" disabled={busy} type="submit">查询</button>
               </div>
               <div className="form-grid two">
                 <label>
-                  <span>Limit</span>
+                  <span>数量</span>
                   <input
                     type="number"
                     min={1}
@@ -436,21 +416,21 @@ function App() {
                   />
                 </label>
                 <label>
-                  <span>Context</span>
+                  <span>范围</span>
                   <select value={historyQuery.contextMode} onChange={(event) => setHistoryQuery({ ...historyQuery, contextMode: event.target.value })}>
-                    <option value="frontmost">frontmost</option>
-                    <option value="latest">latest</option>
-                    <option value="all">all</option>
+                    <option value="frontmost">当前前台应用</option>
+                    <option value="latest">最近一次来源</option>
+                    <option value="all">全部应用</option>
                   </select>
                 </label>
               </div>
               <label>
-                <span>Keyword</span>
-                <input value={historyQuery.keyword} onChange={(event) => setHistoryQuery({ ...historyQuery, keyword: event.target.value })} />
+                <span>关键字</span>
+                <input value={historyQuery.keyword} onChange={(event) => setHistoryQuery({ ...historyQuery, keyword: event.target.value })} placeholder="输入想定位的词或短语" />
               </label>
               <label>
-                <span>Regex</span>
-                <input value={historyQuery.regex} onChange={(event) => setHistoryQuery({ ...historyQuery, regex: event.target.value })} />
+                <span>正则</span>
+                <input value={historyQuery.regex} onChange={(event) => setHistoryQuery({ ...historyQuery, regex: event.target.value })} placeholder="需要高级匹配时再填写" />
               </label>
             </form>
 
@@ -458,7 +438,7 @@ function App() {
               <div className="panel-header">
                 <div>
                   <h2>结果列表</h2>
-                  <p>点击任一结果即可复制全文。</p>
+                  <p>{records.length} 条结果</p>
                 </div>
               </div>
               <div className="history-list">
@@ -485,6 +465,15 @@ function App() {
       </main>
     </div>
   );
+}
+
+function summarizePath(path: string, fallback: string) {
+  const value = path.trim();
+  if (!value) {
+    return fallback;
+  }
+  const parts = value.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) ?? value;
 }
 
 function stringifyError(error: unknown) {
