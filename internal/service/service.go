@@ -1,0 +1,206 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/penwyp/typelens/pkg/typeless"
+)
+
+type Config struct {
+	UserDataPath string `json:"userDataPath"`
+	DBPath       string `json:"dbPath"`
+	APIHost      string `json:"apiHost"`
+	TimeoutSec   int    `json:"timeoutSec"`
+}
+
+type HistoryQuery struct {
+	Limit       int    `json:"limit"`
+	Keyword     string `json:"keyword"`
+	Regex       string `json:"regex"`
+	ContextMode string `json:"contextMode"`
+}
+
+type ImportRequest struct {
+	FilePath    string
+	DryRun      bool
+	Concurrency int
+	LogWriter   io.Writer
+}
+
+type ResetRequest struct {
+	DefaultsFile string
+	Concurrency  int
+	LogWriter    io.Writer
+}
+
+type ClearRequest struct {
+	Concurrency int
+	LogWriter   io.Writer
+}
+
+type Service struct {
+	config Config
+}
+
+func DefaultConfig() (Config, error) {
+	userDataPath, err := typeless.DefaultUserDataPath()
+	if err != nil {
+		return Config{}, err
+	}
+	dbPath, err := typeless.DefaultHistoryDBPath()
+	if err != nil {
+		return Config{}, err
+	}
+	return normalizeConfig(Config{
+		UserDataPath: userDataPath,
+		DBPath:       dbPath,
+		APIHost:      typeless.DefaultAPIHost,
+		TimeoutSec:   15,
+	}), nil
+}
+
+func New(config Config) *Service {
+	return &Service{config: normalizeConfig(config)}
+}
+
+func (s *Service) Config() Config {
+	return s.config
+}
+
+func (s *Service) SetConfig(config Config) {
+	s.config = normalizeConfig(config)
+}
+
+func (s *Service) ListDictionary(ctx context.Context) ([]typeless.DictionaryWord, error) {
+	return s.newDictionaryClient().ListAll(ctx)
+}
+
+func (s *Service) AddDictionaryTerm(ctx context.Context, term string) error {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return fmt.Errorf("词条不能为空")
+	}
+	return s.newDictionaryClient().Add(ctx, term)
+}
+
+func (s *Service) DeleteDictionaryWord(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("词条 ID 不能为空")
+	}
+	return s.newDictionaryClient().Delete(ctx, id)
+}
+
+func (s *Service) ImportDictionary(ctx context.Context, request ImportRequest) (typeless.ImportResult, error) {
+	if strings.TrimSpace(request.FilePath) == "" {
+		return typeless.ImportResult{}, fmt.Errorf("导入文件不能为空")
+	}
+	terms, err := typeless.ReadTermsFile(request.FilePath)
+	if err != nil {
+		return typeless.ImportResult{}, err
+	}
+	return s.newDictionaryClient().ImportTerms(ctx, terms, typeless.ImportOptions{
+		DryRun:         request.DryRun,
+		Concurrency:    request.Concurrency,
+		ProgressWriter: request.LogWriter,
+	})
+}
+
+func (s *Service) ClearDictionary(ctx context.Context, request ClearRequest) (int, error) {
+	return s.newDictionaryClient().Clear(ctx, typeless.ClearOptions{
+		Concurrency:    request.Concurrency,
+		ProgressWriter: request.LogWriter,
+	})
+}
+
+func (s *Service) ResetDictionary(ctx context.Context, request ResetRequest) (typeless.ResetResult, error) {
+	terms := typeless.DefaultDictionaryTerms
+	if strings.TrimSpace(request.DefaultsFile) != "" {
+		fileTerms, err := typeless.ReadTermsFile(request.DefaultsFile)
+		if err != nil {
+			return typeless.ResetResult{}, err
+		}
+		terms = fileTerms
+	}
+	return s.newDictionaryClient().Reset(ctx, terms, typeless.ResetOptions{
+		Concurrency:    request.Concurrency,
+		ProgressWriter: request.LogWriter,
+	})
+}
+
+func (s *Service) QueryHistory(ctx context.Context, query HistoryQuery) ([]typeless.TranscriptRecord, error) {
+	user, err := typeless.LoadCurrentUser(ctx, s.config.UserDataPath)
+	if err != nil {
+		return nil, err
+	}
+	appCtx, err := s.resolveHistoryContext(ctx, user.UserID, query.ContextMode)
+	if err != nil {
+		return nil, err
+	}
+	options, err := s.buildHistoryOptions(query)
+	if err != nil {
+		return nil, err
+	}
+	return typeless.QueryRecentTranscripts(ctx, s.config.DBPath, user.UserID, appCtx, options)
+}
+
+func (s *Service) CopyText(ctx context.Context, text string) error {
+	return typeless.CopyToClipboard(ctx, text)
+}
+
+func (s *Service) resolveHistoryContext(ctx context.Context, userID, mode string) (typeless.AppContext, error) {
+	switch strings.TrimSpace(mode) {
+	case "", "frontmost":
+		return typeless.CurrentAppContext(ctx)
+	case "latest":
+		return typeless.LatestTranscriptContext(ctx, s.config.DBPath, userID)
+	case "all":
+		return typeless.AppContext{}, nil
+	default:
+		return typeless.AppContext{}, fmt.Errorf("未知上下文来源 %q，可选: frontmost/latest/all", mode)
+	}
+}
+
+func (s *Service) buildHistoryOptions(query HistoryQuery) (typeless.TranscriptQueryOptions, error) {
+	options := typeless.TranscriptQueryOptions{
+		Limit:   query.Limit,
+		Keyword: strings.TrimSpace(query.Keyword),
+	}
+	if options.Limit <= 0 {
+		options.Limit = 20
+	}
+	if strings.TrimSpace(query.Regex) != "" {
+		compiled, err := regexp.Compile(query.Regex)
+		if err != nil {
+			return typeless.TranscriptQueryOptions{}, fmt.Errorf("编译正则失败: %w", err)
+		}
+		options.Regex = compiled
+	}
+	return options, nil
+}
+
+func (s *Service) newDictionaryClient() *typeless.DictionaryClient {
+	return typeless.NewDictionaryClient(
+		s.config.APIHost,
+		s.config.UserDataPath,
+		time.Duration(s.config.TimeoutSec)*time.Second,
+	)
+}
+
+func normalizeConfig(config Config) Config {
+	config.UserDataPath = strings.TrimSpace(config.UserDataPath)
+	config.DBPath = strings.TrimSpace(config.DBPath)
+	config.APIHost = strings.TrimSpace(config.APIHost)
+	if config.APIHost == "" {
+		config.APIHost = typeless.DefaultAPIHost
+	}
+	if config.TimeoutSec <= 0 {
+		config.TimeoutSec = 15
+	}
+	return config
+}
