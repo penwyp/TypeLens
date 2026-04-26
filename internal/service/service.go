@@ -100,10 +100,13 @@ func (s *Service) ImportDictionary(ctx context.Context, request ImportRequest) (
 	if strings.TrimSpace(request.FilePath) == "" {
 		return typeless.ImportResult{}, fmt.Errorf("导入文件不能为空")
 	}
+	writeProgressLog(request.LogWriter, "开始解析文件。")
 	terms, err := typeless.ReadTermsFile(request.FilePath)
 	if err != nil {
 		return typeless.ImportResult{}, err
 	}
+	writeProgressLog(request.LogWriter, "解析文件完成，共 %d 行。", len(terms))
+	writeProgressLog(request.LogWriter, "开始获取历史所有记录。")
 	return s.newDictionaryClient().ImportTerms(ctx, terms, typeless.ImportOptions{
 		DryRun:         request.DryRun,
 		Concurrency:    request.Concurrency,
@@ -121,12 +124,17 @@ func (s *Service) ClearDictionary(ctx context.Context, request ClearRequest) (in
 func (s *Service) ResetDictionary(ctx context.Context, request ResetRequest) (typeless.ResetResult, error) {
 	terms := typeless.DefaultDictionaryTerms
 	if strings.TrimSpace(request.DefaultsFile) != "" {
+		writeProgressLog(request.LogWriter, "开始解析文件。")
 		fileTerms, err := typeless.ReadTermsFile(request.DefaultsFile)
 		if err != nil {
 			return typeless.ResetResult{}, err
 		}
 		terms = fileTerms
+		writeProgressLog(request.LogWriter, "解析文件完成，共 %d 行。", len(terms))
+	} else {
+		writeProgressLog(request.LogWriter, "使用内置词表，共 %d 行。", len(terms))
 	}
+	writeProgressLog(request.LogWriter, "开始获取历史所有记录。")
 	return s.newDictionaryClient().Reset(ctx, terms, typeless.ResetOptions{
 		Concurrency:    request.Concurrency,
 		ProgressWriter: request.LogWriter,
@@ -203,4 +211,11 @@ func normalizeConfig(config Config) Config {
 		config.TimeoutSec = 15
 	}
 	return config
+}
+
+func writeProgressLog(writer io.Writer, format string, args ...any) {
+	if writer == nil {
+		return
+	}
+	fmt.Fprintf(writer, format+"\n", args...)
 }
