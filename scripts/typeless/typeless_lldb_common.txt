@@ -1,0 +1,33 @@
+settings set target.inline-breakpoint-strategy always
+settings set target.process.thread.step-avoid-regexp "^std::|^swift::|^dispatch::"
+settings set stop-disassembly-display never
+settings set target.x86-disassembly-flavor intel
+
+command alias btall thread backtrace all
+command alias iv image list -o -f
+command alias regs register read
+
+script print("[typeless-lldb] commands loaded")
+script print("[typeless-lldb] useful commands: run / c / bt / btall / iv / image lookup -n _getDeviceId")
+
+breakpoint set -n _getDeviceId
+breakpoint command add
+script print("\\n[typeless-lldb] HIT _getDeviceId")
+frame info
+register read x0 x1 x2 x3
+memory read --format c-string --size 1 --count 1 $x0
+bt
+DONE
+
+breakpoint set -n _getFocusedAppInfo
+breakpoint set -n _getFocusedElementInfo
+breakpoint set -n _getFocusedVisibleText
+breakpoint set -n _getFocusedElementRelatedContent
+
+command regex bret 's/(.+)/breakpoint set --name %1 --skip-prologue false/'
+command alias devbt image lookup -n _getDeviceId
+command alias devret finish
+
+target stop-hook add
+frame info
+DONE

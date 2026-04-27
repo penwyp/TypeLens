@@ -3,10 +3,14 @@ package typeless
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -261,32 +265,51 @@ func (c *DictionaryClient) Reset(ctx context.Context, terms []string, options Re
 }
 
 func (c *DictionaryClient) Add(ctx context.Context, term string) error {
-	return c.runNodeRequest(ctx, nodeDictionaryRequest{
-		Action: "add",
-		Term:   term,
-	})
+	var response apiResponse[json.RawMessage]
+	if err := c.runDictionaryRequest(ctx, http.MethodPost, "/user/dictionary/add", nil, map[string]string{
+		"term": term,
+	}, &response); err != nil {
+		return err
+	}
+	return ensureDictionaryAPIStatusOK(response)
 }
 
 func (c *DictionaryClient) Delete(ctx context.Context, id string) error {
-	return c.runNodeRequest(ctx, nodeDictionaryRequest{
-		Action: "delete",
-		ID:     id,
-	})
+	var response apiResponse[json.RawMessage]
+	if err := c.runDictionaryRequest(ctx, http.MethodPost, "/user/dictionary/delete", nil, map[string]string{
+		"user_dictionary_id": id,
+	}, &response); err != nil {
+		return err
+	}
+	return ensureDictionaryAPIStatusOK(response)
 }
 
 func (c *DictionaryClient) list(ctx context.Context, offset, size int) ([]DictionaryWord, int, error) {
-	var response apiResponse[listDictionaryData]
-	if err := c.runNodeRequest(ctx, nodeDictionaryRequest{
-		Action: "list",
-		Offset: offset,
-		Size:   size,
-	}, &response); err != nil {
+	var response apiResponse[*listDictionaryData]
+	query := url.Values{}
+	query.Set("offset", strconv.Itoa(offset))
+	query.Set("size", strconv.Itoa(size))
+	if err := c.runDictionaryRequest(ctx, http.MethodGet, "/user/dictionary/list", query, nil, &response); err != nil {
 		return nil, 0, err
 	}
 	if response.Status != "OK" {
-		return nil, 0, fmt.Errorf("Typeless API 返回失败: %s", response.Message)
+		return nil, 0, ensureDictionaryAPIStatusOK(response)
+	}
+	if response.Data == nil {
+		return nil, 0, fmt.Errorf("Typeless API 返回缺少词典数据")
 	}
 	return response.Data.Words, response.Data.TotalCount, nil
+}
+
+func ensureDictionaryAPIStatusOK[T any](response apiResponse[T]) error {
+	if response.Status == "OK" {
+		return nil
+	}
+	message := strings.TrimSpace(response.Message)
+	if message == "" {
+		message = "未知错误"
+	}
+	return fmt.Errorf("Typeless API 返回失败: %s", message)
 }
 
 func ReadTermsFile(path string) ([]string, error) {

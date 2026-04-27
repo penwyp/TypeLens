@@ -22,7 +22,7 @@ type Notice = {
   text: string;
 };
 
-type DialogKind = 'add' | 'edit' | 'import' | 'reset' | 'export' | null;
+type DialogKind = 'add' | 'import' | 'reset' | 'export' | null;
 type ImportTab = 'file' | 'auto';
 type WordMenu = {
   x: number;
@@ -55,8 +55,6 @@ export function DictionaryView({
   const [pendingWords, setPendingWords] = useState<typeless.PendingDictionaryWord[]>([]);
   const [visibleWordCount, setVisibleWordCount] = useState(WORD_PAGE_SIZE);
   const [newTerm, setNewTerm] = useState('');
-  const [editingWord, setEditingWord] = useState<typeless.DictionaryWord | null>(null);
-  const [editingTerm, setEditingTerm] = useState('');
   const [importPath, setImportPath] = useState('');
   const [importConcurrency, setImportConcurrency] = useState(10);
   const [importSummary, setImportSummary] = useState<typeless.ImportResult | null>(null);
@@ -210,45 +208,6 @@ export function DictionaryView({
       setWords((current) => [optimisticWord, ...current]);
       await AddDictionaryTerm(term);
       onNotice({ kind: 'success', text: '词条已新增。' });
-      refreshAllInBackground();
-    } catch (error) {
-      setWords(previousWords);
-      onNotice({ kind: 'error', text: stringifyError(error) });
-    }
-  }
-
-  async function saveEditedTerm(event: FormEvent) {
-    event.preventDefault();
-    if (!editingWord) {
-      return;
-    }
-    const term = editingTerm.trim();
-    const oldTerm = editingWord.term.trim();
-    if (!term) {
-      onNotice({ kind: 'error', text: '词条不能为空' });
-      return;
-    }
-    if (term === oldTerm) {
-      setDialog(null);
-      return;
-    }
-    const oldKey = normalizeTerm(oldTerm);
-    const nextKey = normalizeTerm(term);
-    if (oldKey !== nextKey && entries.some((entry) => normalizeTerm(entry.term) === nextKey)) {
-      onNotice({ kind: 'info', text: '词条已存在' });
-      return;
-    }
-    const previousWords = words;
-    try {
-      setDialog(null);
-      setWords((current) => current.map((word) => (
-        word.user_dictionary_id === editingWord.user_dictionary_id ? { ...word, term } : word
-      )));
-      await DeleteDictionaryWord(editingWord.user_dictionary_id);
-      await AddDictionaryTerm(term);
-      setEditingWord(null);
-      setEditingTerm('');
-      onNotice({ kind: 'success', text: '词条已更新。' });
       refreshAllInBackground();
     } catch (error) {
       setWords(previousWords);
@@ -429,33 +388,18 @@ export function DictionaryView({
             </div>
             <span className="word-actions">
               {entry.kind === 'remote' ? (
-                <>
-                  <button
-                    className="word-action"
-                    type="button"
-                    aria-label="编辑"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setEditingWord(entry.word);
-                      setEditingTerm(entry.word.term);
-                      setDialog('edit');
-                    }}
-                  >
-                    <EditIcon />
-                  </button>
-                  <button
-                    className="word-action danger"
-                    type="button"
-                    aria-label="删除"
-                    disabled={busy}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void deleteWord(entry);
-                    }}
-                  >
-                    <TrashIcon />
-                  </button>
-                </>
+                <button
+                  className="word-action danger"
+                  type="button"
+                  aria-label="删除"
+                  disabled={busy}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void deleteWord(entry);
+                  }}
+                >
+                  <TrashIcon />
+                </button>
               ) : null}
             </span>
           </div>
@@ -470,21 +414,6 @@ export function DictionaryView({
             <div className="dialog-actions">
               <button className="ghost-button" type="button" onClick={() => setDialog(null)}>取消</button>
               <button className="primary-button" type="submit">新增</button>
-            </div>
-          </form>
-        </Dialog>
-      ) : null}
-
-      {dialog === 'edit' && editingWord ? (
-        <Dialog title="编辑词汇" onClose={() => setDialog(null)}>
-          <form className="dialog-form" onSubmit={saveEditedTerm}>
-            <label>
-              <span>编辑</span>
-              <input autoFocus value={editingTerm} onChange={(event) => setEditingTerm(event.target.value)} />
-            </label>
-            <div className="dialog-actions">
-              <button className="ghost-button" type="button" onClick={() => setDialog(null)}>取消</button>
-              <button className="primary-button" type="submit">保存</button>
             </div>
           </form>
         </Dialog>
@@ -622,14 +551,6 @@ function LoadingState() {
       <div className="loading-spinner" />
       <div>当前正在载入中，请稍等</div>
     </div>
-  );
-}
-
-function EditIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="m5 16.7-.35 2.65L7.3 19l9.85-9.85a2.05 2.05 0 0 0-2.9-2.9L4.4 16.1l.6.6Zm7.95-8.95 3.3 3.3M4.65 19.35 8 16" />
-    </svg>
   );
 }
 

@@ -5,12 +5,13 @@ go 1.26.0
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/emmansun/gmsm v0.42.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/spf13/cobra v1.10.1
 	github.com/wailsapp/wails/v2 v2.12.0
 	github.com/yanyiwu/gojieba v1.4.7
-	golang.org/x/crypto v0.33.0
-	golang.org/x/sync v0.17.0
+	golang.org/x/crypto v0.48.0
+	golang.org/x/sync v0.19.0
 )
 
 require (
@@ -58,7 +59,7 @@ require (
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 )

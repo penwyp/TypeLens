@@ -14,7 +14,7 @@ The desktop app is built with Wails + React + TypeScript. The CLI is built with 
 ### Dictionary management
 
 - List all remote Typeless dictionary entries
-- Add, edit, and delete dictionary entries
+- Add and delete dictionary entries
 - Import dictionary entries from a plain text file
   - expected format: one term per line
 - Reset the dictionary against built-in defaults or a custom file

@@ -1,8 +1,6 @@
 package typeless
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -60,22 +58,22 @@ func TestIsSkippableDictionaryAddError(t *testing.T) {
 	}{
 		{
 			name: "400 duplicate",
-			err:  assertError(`调用 Typeless Node 桥接失败: Error: HTTP 400: {"code":10302,"detail":"Term already exists, cannot add duplicate","status":"FAIL","msg":"HTTPException"}`),
+			err:  assertError(`调用 Typeless API 失败: HTTP 400: {"code":10302,"detail":"Term already exists, cannot add duplicate","status":"FAIL","msg":"HTTPException"}`),
 			want: true,
 		},
 		{
 			name: "401 unauthorized",
-			err:  assertError("调用 Typeless Node 桥接失败: Error: HTTP 401: unauthorized"),
+			err:  assertError("调用 Typeless API 失败: HTTP 401: unauthorized"),
 			want: true,
 		},
 		{
 			name: "429 too many requests",
-			err:  assertError("调用 Typeless Node 桥接失败: Error: HTTP 429: too many requests"),
+			err:  assertError("调用 Typeless API 失败: HTTP 429: too many requests"),
 			want: true,
 		},
 		{
 			name: "500 server error",
-			err:  assertError("调用 Typeless Node 桥接失败: Error: HTTP 500: internal server error"),
+			err:  assertError("调用 Typeless API 失败: HTTP 500: internal server error"),
 			want: false,
 		},
 		{
@@ -105,22 +103,22 @@ func TestIsSkippableDictionaryDeleteError(t *testing.T) {
 	}{
 		{
 			name: "400 delete conflict",
-			err:  assertError("调用 Typeless Node 桥接失败: Error: HTTP 400: invalid word id"),
+			err:  assertError("调用 Typeless API 失败: HTTP 400: invalid word id"),
 			want: true,
 		},
 		{
 			name: "404 missing word",
-			err:  assertError("调用 Typeless Node 桥接失败: Error: HTTP 404: word not found"),
+			err:  assertError("调用 Typeless API 失败: HTTP 404: word not found"),
 			want: true,
 		},
 		{
 			name: "401 unauthorized should not skip",
-			err:  assertError("调用 Typeless Node 桥接失败: Error: HTTP 401: unauthorized"),
+			err:  assertError("调用 Typeless API 失败: HTTP 401: unauthorized"),
 			want: false,
 		},
 		{
 			name: "429 throttled should not skip",
-			err:  assertError("调用 Typeless Node 桥接失败: Error: HTTP 429: too many requests"),
+			err:  assertError("调用 Typeless API 失败: HTTP 429: too many requests"),
 			want: false,
 		},
 	}
@@ -159,23 +157,6 @@ func TestBuildResetPlan(t *testing.T) {
 	wantAdd := []string{"cursor", "claude code"}
 	if !reflect.DeepEqual(plan.AddTerms, wantAdd) {
 		t.Fatalf("buildResetPlan().AddTerms = %#v, want %#v", plan.AddTerms, wantAdd)
-	}
-}
-
-func TestResolveNodeBinaryFromPath(t *testing.T) {
-	tempDir := t.TempDir()
-	nodePath := filepath.Join(tempDir, "node")
-	if err := os.WriteFile(nodePath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", tempDir)
-
-	got, err := resolveNodeBinary()
-	if err != nil {
-		t.Fatalf("resolveNodeBinary() error = %v", err)
-	}
-	if got != nodePath {
-		t.Fatalf("resolveNodeBinary() = %q, want %q", got, nodePath)
 	}
 }
 
