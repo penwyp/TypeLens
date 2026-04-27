@@ -1,6 +1,8 @@
 package typeless
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -157,6 +159,23 @@ func TestBuildResetPlan(t *testing.T) {
 	wantAdd := []string{"cursor", "claude code"}
 	if !reflect.DeepEqual(plan.AddTerms, wantAdd) {
 		t.Fatalf("buildResetPlan().AddTerms = %#v, want %#v", plan.AddTerms, wantAdd)
+	}
+}
+
+func TestResolveNodeBinaryFromPath(t *testing.T) {
+	tempDir := t.TempDir()
+	nodePath := filepath.Join(tempDir, "node")
+	if err := os.WriteFile(nodePath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", tempDir)
+
+	got, err := resolveNodeBinary()
+	if err != nil {
+		t.Fatalf("resolveNodeBinary() error = %v", err)
+	}
+	if got != nodePath {
+		t.Fatalf("resolveNodeBinary() = %q, want %q", got, nodePath)
 	}
 }
 

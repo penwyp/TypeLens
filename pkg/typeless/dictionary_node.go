@@ -6,7 +6,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -34,7 +36,12 @@ func (c *DictionaryClient) runNodeRequest(ctx context.Context, request nodeDicti
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "node", "-e", dictionaryNodeScript)
+	nodePath, err := resolveNodeBinary()
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, nodePath, "-e", dictionaryNodeScript)
 	cmd.Stdin = bytes.NewReader(payload)
 
 	var stdout bytes.Buffer
@@ -59,4 +66,29 @@ func (c *DictionaryClient) runNodeRequest(ctx context.Context, request nodeDicti
 		return fmt.Errorf("解析 Typeless Node 返回失败: %w; body=%s", err, strings.TrimSpace(stdout.String()))
 	}
 	return nil
+}
+
+func resolveNodeBinary() (string, error) {
+	if nodePath, err := exec.LookPath("node"); err == nil {
+		return nodePath, nil
+	}
+
+	home, _ := os.UserHomeDir()
+	candidates := []string{
+		filepath.Join(home, ".local", "share", "mise", "installs", "node", "latest", "bin", "node"),
+		filepath.Join(home, ".local", "share", "mise", "shims", "node"),
+		"/opt/homebrew/bin/node",
+		"/usr/local/bin/node",
+	}
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue
+		}
+		return candidate, nil
+	}
+	return "", fmt.Errorf("调用 Typeless Node 桥接失败: 找不到 node，请安装 Node.js 或配置 PATH")
 }
