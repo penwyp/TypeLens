@@ -59,10 +59,9 @@ func (s *Service) SaveHistoryCache(query HistoryQuery, records []typeless.Transc
 	})
 }
 
-func (s *Service) saveDictionaryCacheSnapshot(words []typeless.DictionaryWord, pendingWords []typeless.PendingDictionaryWord) error {
-	return s.SaveDictionaryCache(DictionaryCache{
-		Words:        cloneSlice(words),
-		PendingWords: cloneSlice(pendingWords),
+func (s *Service) savePendingWordsCache(pendingWords []typeless.PendingDictionaryWord) error {
+	return s.updateCacheStore(func(store *appCacheStore) {
+		store.PendingWords = cloneSlice(pendingWords)
 	})
 }
 

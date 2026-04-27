@@ -83,10 +83,6 @@ func (s *Service) ConfirmAutoImport(ctx context.Context, request AutoImportConfi
 		return AutoImportConfirmResult{}, fmt.Errorf("没有可导入的词")
 	}
 
-	cache, err := s.LoadDictionaryCache()
-	if err != nil {
-		return AutoImportConfirmResult{}, err
-	}
 	pendingWords, err := typeless.LoadPendingDictionaryWords(s.autoImportStatePath())
 	if err != nil {
 		return AutoImportConfirmResult{}, err
@@ -101,7 +97,7 @@ func (s *Service) ConfirmAutoImport(ctx context.Context, request AutoImportConfi
 	if err := typeless.SavePendingDictionaryWords(s.autoImportStatePath(), nextWords); err != nil {
 		return AutoImportConfirmResult{}, err
 	}
-	if err := s.saveDictionaryCacheSnapshot(cache.Words, nextWords); err != nil {
+	if err := s.savePendingWordsCache(nextWords); err != nil {
 		return AutoImportConfirmResult{}, err
 	}
 
@@ -119,10 +115,6 @@ func (s *Service) ConfirmAutoImportSync(ctx context.Context, request AutoImportC
 		return AutoImportConfirmResult{}, fmt.Errorf("没有可导入的词")
 	}
 
-	cache, err := s.LoadDictionaryCache()
-	if err != nil {
-		return AutoImportConfirmResult{}, err
-	}
 	pendingWords, err := typeless.LoadPendingDictionaryWords(s.autoImportStatePath())
 	if err != nil {
 		return AutoImportConfirmResult{}, err
@@ -137,7 +129,7 @@ func (s *Service) ConfirmAutoImportSync(ctx context.Context, request AutoImportC
 	if err := typeless.SavePendingDictionaryWords(s.autoImportStatePath(), nextWords); err != nil {
 		return AutoImportConfirmResult{}, err
 	}
-	if err := s.saveDictionaryCacheSnapshot(cache.Words, nextWords); err != nil {
+	if err := s.savePendingWordsCache(nextWords); err != nil {
 		return AutoImportConfirmResult{}, err
 	}
 
@@ -159,12 +151,8 @@ func (s *Service) ListPendingAutoImportWords() ([]typeless.PendingDictionaryWord
 	if err != nil {
 		return nil, err
 	}
-	cache, err := s.LoadDictionaryCache()
-	if err != nil {
-		return nil, err
-	}
 	visible := typeless.FilterVisiblePendingWords(words)
-	if err := s.saveDictionaryCacheSnapshot(cache.Words, visible); err != nil {
+	if err := s.savePendingWordsCache(words); err != nil {
 		return nil, err
 	}
 	return visible, nil
@@ -204,12 +192,6 @@ func (s *Service) syncPendingAutoImportWords(ctx context.Context, logWriter io.W
 		emitAutoImportLog(logWriter, "没有待同步词条。")
 		return
 	}
-	cache, err := s.LoadDictionaryCache()
-	if err != nil {
-		emitAutoImportLog(logWriter, "读取本地缓存失败：%v", err)
-		return
-	}
-
 	client := s.newDictionaryClient()
 	for _, word := range words {
 		if err := ctx.Err(); err != nil {
@@ -223,7 +205,7 @@ func (s *Service) syncPendingAutoImportWords(ctx context.Context, logWriter io.W
 			emitAutoImportLog(logWriter, "更新词 %q 状态失败：%v", word.Term, err)
 			return
 		}
-		if err := s.saveDictionaryCacheSnapshot(cache.Words, words); err != nil {
+		if err := s.savePendingWordsCache(words); err != nil {
 			emitAutoImportLog(logWriter, "更新本地缓存失败：%v", err)
 			return
 		}
@@ -243,7 +225,7 @@ func (s *Service) syncPendingAutoImportWords(ctx context.Context, logWriter io.W
 			emitAutoImportLog(logWriter, "保存词 %q 状态失败：%v", word.Term, err)
 			return
 		}
-		if err := s.saveDictionaryCacheSnapshot(cache.Words, words); err != nil {
+		if err := s.savePendingWordsCache(words); err != nil {
 			emitAutoImportLog(logWriter, "保存本地缓存失败：%v", err)
 			return
 		}
