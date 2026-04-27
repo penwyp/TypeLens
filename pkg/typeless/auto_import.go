@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -86,6 +87,15 @@ type autoImportScanSummary struct {
 	messages int
 }
 
+type autoImportProgressSnapshot struct {
+	sourceIndex   int
+	sourceCount   int
+	sourceWorkdir string
+	scannedFiles  int64
+	totalFiles    int
+	totalMessages int64
+}
+
 type codexHistoryLine struct {
 	Text string `json:"text"`
 }
@@ -154,13 +164,89 @@ func ScanAutoImportCandidates(
 	existingTerms map[string]struct{},
 	pendingTerms map[string]struct{},
 ) (AutoImportScanResult, error) {
-	messages := make([]autoImportMessage, 0, 512)
-	summary := autoImportScanSummary{}
+	return scanAutoImportCandidates(ctx, sources, existingTerms, pendingTerms, nil)
+}
+
+func ScanAutoImportCandidatesWithProgress(
+	ctx context.Context,
+	sources []AutoImportSource,
+	existingTerms map[string]struct{},
+	pendingTerms map[string]struct{},
+	progressWriter io.Writer,
+) (AutoImportScanResult, error) {
+	return scanAutoImportCandidates(ctx, sources, existingTerms, pendingTerms, progressWriter)
+}
+
+func scanAutoImportCandidates(
+	ctx context.Context,
+	sources []AutoImportSource,
+	existingTerms map[string]struct{},
+	pendingTerms map[string]struct{},
+	progressWriter io.Writer,
+) (AutoImportScanResult, error) {
+	type discoveredSource struct {
+		platform string
+		workdir  string
+		paths    []string
+	}
+
+	discovered := make([]discoveredSource, 0, len(sources))
+	totalFiles := 0
+	enabledSourceCount := 0
 	for _, source := range sources {
 		if !source.Enabled {
 			continue
 		}
-		platformMessages, platformSummary, err := scanPlatformMessages(ctx, source)
+		enabledSourceCount++
+	}
+
+	receivedSourceIndex := 0
+	for _, source := range sources {
+		if !source.Enabled {
+			continue
+		}
+		platform := normalizeAutoImportPlatform(source.Platform)
+		if platform == "" {
+			return AutoImportScanResult{}, fmt.Errorf("未知平台 %q", source.Platform)
+		}
+		workdir := strings.TrimSpace(source.Workdir)
+		if workdir == "" {
+			return AutoImportScanResult{}, fmt.Errorf("%s 工作目录不能为空", platform)
+		}
+		receivedSourceIndex++
+		emitAutoImportLog(progressWriter, "已接收到目录 %d/%d：%s", receivedSourceIndex, enabledSourceCount, workdir)
+		paths, err := discoverAutoImportFiles(platform, workdir)
+		if err != nil {
+			return AutoImportScanResult{}, err
+		}
+		discovered = append(discovered, discoveredSource{
+			platform: platform,
+			workdir:  workdir,
+			paths:    paths,
+		})
+		totalFiles += len(paths)
+	}
+
+	emitAutoImportLog(progressWriter, "目录准备完成，共 %d 个目录，预计扫描文件 %d 个。", len(discovered), totalFiles)
+
+	messages := make([]autoImportMessage, 0, 512)
+	summary := autoImportScanSummary{}
+	var scannedFiles atomic.Int64
+	var totalMessages atomic.Int64
+	for sourceIndex, source := range discovered {
+		emitAutoImportLog(progressWriter, "正在扫描目录 %d/%d：%s", sourceIndex+1, len(discovered), source.workdir)
+		platformMessages, platformSummary, err := scanPlatformMessages(
+			ctx,
+			source.platform,
+			source.paths,
+			sourceIndex+1,
+			len(discovered),
+			source.workdir,
+			totalFiles,
+			&scannedFiles,
+			&totalMessages,
+			progressWriter,
+		)
 		if err != nil {
 			return AutoImportScanResult{}, err
 		}
@@ -168,6 +254,8 @@ func ScanAutoImportCandidates(
 		summary.files += platformSummary.files
 		summary.messages += platformSummary.messages
 	}
+	emitAutoImportLog(progressWriter, "文件扫描完成，共 %d 个文件，累计文本 %d 条。", summary.files, summary.messages)
+	emitAutoImportLog(progressWriter, "正在提取候选词。")
 
 	rawCandidates := extractAutoImportCandidates(messages)
 	result := AutoImportScanResult{
@@ -175,6 +263,8 @@ func ScanAutoImportCandidates(
 		ParsedMessages: summary.messages,
 		RawCandidates:  len(rawCandidates),
 	}
+	emitAutoImportLog(progressWriter, "候选词提取完成，共 %d 个。", result.RawCandidates)
+	emitAutoImportLog(progressWriter, "正在与现有词典做差集过滤。")
 
 	filtered := make([]AutoImportCandidate, 0, len(rawCandidates))
 	for _, candidate := range rawCandidates {
@@ -188,28 +278,37 @@ func ScanAutoImportCandidates(
 	}
 	result.FilteredCandidates = len(filtered)
 	result.Items = filtered
+	emitAutoImportLog(progressWriter, "差集过滤完成，最终候选词 %d 个。", result.FilteredCandidates)
 	return result, nil
 }
 
-func scanPlatformMessages(ctx context.Context, source AutoImportSource) ([]autoImportMessage, autoImportScanSummary, error) {
-	platform := normalizeAutoImportPlatform(source.Platform)
-	if platform == "" {
-		return nil, autoImportScanSummary{}, fmt.Errorf("未知平台 %q", source.Platform)
-	}
-	workdir := strings.TrimSpace(source.Workdir)
-	if workdir == "" {
-		return nil, autoImportScanSummary{}, fmt.Errorf("%s 工作目录不能为空", platform)
-	}
-
-	paths, err := discoverAutoImportFiles(platform, workdir)
-	if err != nil {
-		return nil, autoImportScanSummary{}, err
-	}
+func scanPlatformMessages(
+	ctx context.Context,
+	platform string,
+	paths []string,
+	sourceIndex int,
+	sourceCount int,
+	sourceWorkdir string,
+	totalFiles int,
+	scannedFiles *atomic.Int64,
+	totalMessages *atomic.Int64,
+	progressWriter io.Writer,
+) ([]autoImportMessage, autoImportScanSummary, error) {
 	if len(paths) == 0 {
+		emitAutoImportLog(progressWriter, "目录 %d/%d 没有可扫描文件：%s", sourceIndex, sourceCount, sourceWorkdir)
 		return nil, autoImportScanSummary{}, nil
 	}
 
 	results := make([][]autoImportMessage, len(paths))
+	done := make(chan struct{})
+	defer close(done)
+	go streamAutoImportProgress(done, scannedFiles, totalMessages, progressWriter, autoImportProgressSnapshot{
+		sourceIndex:   sourceIndex,
+		sourceCount:   sourceCount,
+		sourceWorkdir: sourceWorkdir,
+		totalFiles:    totalFiles,
+	})
+
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(autoImportWorkerLimit(len(paths)))
 	for index, path := range paths {
@@ -224,12 +323,24 @@ func scanPlatformMessages(ctx context.Context, source AutoImportSource) ([]autoI
 				return fmt.Errorf("解析 %s 失败: %w", path, err)
 			}
 			results[index] = fileMessages
+			scannedFiles.Add(1)
+			totalMessages.Add(int64(len(fileMessages)))
 			return nil
 		})
 	}
 	if err := group.Wait(); err != nil {
 		return nil, autoImportScanSummary{}, err
 	}
+	emitAutoImportLog(
+		progressWriter,
+		"目录 %d/%d 扫描完成：%s，累计文件 %d/%d，累计文本 %d 条。",
+		sourceIndex,
+		sourceCount,
+		sourceWorkdir,
+		scannedFiles.Load(),
+		totalFiles,
+		totalMessages.Load(),
+	)
 
 	messages := make([]autoImportMessage, 0, 256)
 	for _, fileMessages := range results {
@@ -409,6 +520,47 @@ func parseAutoImportLine(dst []string, platform, path string, line []byte) ([]st
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("未知平台 %q", platform)
+	}
+}
+
+func streamAutoImportProgress(
+	done <-chan struct{},
+	scannedFiles *atomic.Int64,
+	totalMessages *atomic.Int64,
+	progressWriter io.Writer,
+	snapshot autoImportProgressSnapshot,
+) {
+	if progressWriter == nil || snapshot.totalFiles <= 0 {
+		return
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	lastScanned := int64(-1)
+	lastMessages := int64(-1)
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			currentScanned := scannedFiles.Load()
+			currentMessages := totalMessages.Load()
+			if currentScanned == lastScanned && currentMessages == lastMessages {
+				continue
+			}
+			lastScanned = currentScanned
+			lastMessages = currentMessages
+			emitAutoImportLog(
+				progressWriter,
+				"扫描进度：目录 %d/%d（%s），累计文件 %d/%d，累计文本 %d 条。",
+				snapshot.sourceIndex,
+				snapshot.sourceCount,
+				snapshot.sourceWorkdir,
+				currentScanned,
+				snapshot.totalFiles,
+				currentMessages,
+			)
+		}
 	}
 }
 

@@ -140,7 +140,8 @@ func (a *App) SelectDictionaryExportFile() (string, error) {
 
 func (a *App) ExportDictionaryFile(filePath string) (int, error) {
 	return a.service.ExportDictionary(a.ctx, service.ExportRequest{
-		FilePath: filePath,
+		FilePath:  filePath,
+		LogWriter: newEventWriter(a.ctx, "typelens:export-log"),
 	})
 }
 
@@ -149,7 +150,7 @@ func (a *App) DefaultAutoImportSources() ([]typeless.AutoImportSource, error) {
 }
 
 func (a *App) ScanAutoImportSources(request service.AutoImportScanRequest) (typeless.AutoImportScanResult, error) {
-	return a.service.ScanAutoImport(a.ctx, request)
+	return a.service.ScanAutoImport(a.ctx, request, newAutoImportEventWriter(a.ctx))
 }
 
 func (a *App) ConfirmAutoImport(request service.AutoImportConfirmRequest) (service.AutoImportConfirmResult, error) {

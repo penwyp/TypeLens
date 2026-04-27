@@ -9,10 +9,11 @@ type AutoImportPanelProps = {
   busy: boolean;
   logs: string[];
   onError: (message: string) => void;
+  onScanStart: () => void;
   onSuccess: (result: service.AutoImportConfirmResult) => void;
 };
 
-export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPanelProps) {
+export function AutoImportPanel({ busy, logs, onError, onScanStart, onSuccess }: AutoImportPanelProps) {
   const [step, setStep] = useState<AutoImportStep>('sources');
   const [loadingDefaults, setLoadingDefaults] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
@@ -63,6 +64,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
   async function scanSources() {
     try {
       setActionBusy(true);
+      onScanStart();
       const result = await ScanAutoImportSources(new service.AutoImportScanRequest({
         sources,
       }));
@@ -133,7 +135,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
           <div className="auto-import-source-list">
             {sources.map((source, index) => (
               <div className="source-card source-card-inline" key={`${source.platform}-${index}`}>
-                <label className="source-inline-main">
+                <div className="source-inline-main">
                   <input
                     className="source-checkbox"
                     checked={source.enabled}
@@ -143,7 +145,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
                   <div className="source-label-group">
                     <span className="source-name">{sourceLabel(source.platform)}</span>
                   </div>
-                </label>
+                </div>
                 <input
                   className="source-workdir-input"
                   value={source.workdir}

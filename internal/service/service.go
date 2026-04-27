@@ -47,7 +47,8 @@ type ClearRequest struct {
 }
 
 type ExportRequest struct {
-	FilePath string
+	FilePath  string
+	LogWriter io.Writer
 }
 
 type Service struct {
@@ -185,18 +186,25 @@ func (s *Service) ExportDictionary(ctx context.Context, request ExportRequest) (
 	if filePath == "" {
 		return 0, fmt.Errorf("导出文件不能为空")
 	}
+	writeProgressLog(request.LogWriter, "10%% 准备导出词典。")
+	writeProgressLog(request.LogWriter, "25%% 正在读取远端词典。")
 	words, err := s.newDictionaryClient().ListAll(ctx)
 	if err != nil {
 		return 0, err
 	}
+	writeProgressLog(request.LogWriter, "45%% 远端词典读取完成，共 %d 个词条。", len(words))
+	writeProgressLog(request.LogWriter, "55%% 正在读取本地待同步词条。")
 	pending, err := typeless.LoadPendingDictionaryWords(s.config.AutoImportStatePath)
 	if err != nil {
 		return 0, err
 	}
+	writeProgressLog(request.LogWriter, "70%% 本地待同步词条读取完成，共 %d 个。", len(pending))
 	terms := typeless.MergeDictionaryExportTerms(words, pending)
+	writeProgressLog(request.LogWriter, "85%% 合并去重完成，待写入 1/1 个文件，共 %d 行。", len(terms))
 	if err := typeless.WriteDictionaryTermsFile(filePath, terms); err != nil {
 		return 0, err
 	}
+	writeProgressLog(request.LogWriter, "100%% 导出完成，输出文件 1/1：%s", filePath)
 	return len(terms), nil
 }
 

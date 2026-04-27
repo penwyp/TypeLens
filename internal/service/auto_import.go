@@ -23,25 +23,37 @@ type AutoImportConfirmResult struct {
 	Words         []typeless.PendingDictionaryWord `json:"words"`
 }
 
-func (s *Service) ScanAutoImport(ctx context.Context, request AutoImportScanRequest) (typeless.AutoImportScanResult, error) {
+func (s *Service) ScanAutoImport(ctx context.Context, request AutoImportScanRequest, logWriter io.Writer) (typeless.AutoImportScanResult, error) {
 	sources, err := s.normalizeAutoImportSources(request.Sources)
 	if err != nil {
 		return typeless.AutoImportScanResult{}, err
 	}
+	enabledSources := 0
+	for _, source := range sources {
+		if source.Enabled {
+			enabledSources++
+		}
+	}
+	emitAutoImportLog(logWriter, "已接收到 %d 个目录，开始准备自动导入。", enabledSources)
+	emitAutoImportLog(logWriter, "正在读取远端词典。")
 
 	existingWords, err := s.newDictionaryClient().ListAll(ctx)
 	if err != nil {
 		return typeless.AutoImportScanResult{}, err
 	}
+	emitAutoImportLog(logWriter, "远端词典读取完成，共 %d 个词条。", len(existingWords))
+	emitAutoImportLog(logWriter, "正在读取本地待同步词条。")
 	pendingWords, err := typeless.LoadPendingDictionaryWords(s.autoImportStatePath())
 	if err != nil {
 		return typeless.AutoImportScanResult{}, err
 	}
-	return typeless.ScanAutoImportCandidates(
+	emitAutoImportLog(logWriter, "本地待同步词条读取完成，共 %d 个。", len(pendingWords))
+	return typeless.ScanAutoImportCandidatesWithProgress(
 		ctx,
 		sources,
 		typeless.DictionaryTermSet(existingWords),
 		typeless.PendingDictionaryTermSet(pendingWords),
+		logWriter,
 	)
 }
 
@@ -71,6 +83,39 @@ func (s *Service) ConfirmAutoImport(ctx context.Context, request AutoImportConfi
 	return AutoImportConfirmResult{
 		AcceptedCount: acceptedCount,
 		Words:         typeless.FilterVisiblePendingWords(nextWords),
+	}, nil
+}
+
+func (s *Service) ConfirmAutoImportSync(ctx context.Context, request AutoImportConfirmRequest, logWriter io.Writer) (AutoImportConfirmResult, error) {
+	if len(request.Items) == 0 {
+		return AutoImportConfirmResult{}, fmt.Errorf("没有可导入的词")
+	}
+
+	pendingWords, err := typeless.LoadPendingDictionaryWords(s.autoImportStatePath())
+	if err != nil {
+		return AutoImportConfirmResult{}, err
+	}
+	nextWords, acceptedCount := typeless.MergePendingCandidates(pendingWords, request.Items)
+	if acceptedCount == 0 {
+		return AutoImportConfirmResult{
+			AcceptedCount: 0,
+			Words:         typeless.FilterVisiblePendingWords(nextWords),
+		}, nil
+	}
+	if err := typeless.SavePendingDictionaryWords(s.autoImportStatePath(), nextWords); err != nil {
+		return AutoImportConfirmResult{}, err
+	}
+
+	emitAutoImportLog(logWriter, "已写入本地待同步词条 %d 个，开始同步。", acceptedCount)
+	s.syncPendingAutoImportWords(ctx, logWriter)
+
+	words, err := typeless.LoadPendingDictionaryWords(s.autoImportStatePath())
+	if err != nil {
+		return AutoImportConfirmResult{}, err
+	}
+	return AutoImportConfirmResult{
+		AcceptedCount: acceptedCount,
+		Words:         typeless.FilterVisiblePendingWords(words),
 	}, nil
 }
 

@@ -34,6 +34,7 @@ func NewRootCommand() (*cobra.Command, error) {
 
 	root.AddCommand(newDictCommand(svc))
 	root.AddCommand(newHistoryCommand(svc))
+	root.AddCommand(newAutoImportCommand(svc))
 	return root, nil
 }
 

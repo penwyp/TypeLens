@@ -62,6 +62,10 @@ export function DictionaryView({
   const [importSummary, setImportSummary] = useState<typeless.ImportResult | null>(null);
   const [operationLogs, setOperationLogs] = useState<string[]>([]);
   const [exportPath, setExportPath] = useState('');
+  const [exportLogs, setExportLogs] = useState<string[]>([]);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportStatusText, setExportStatusText] = useState('等待选择保存路径');
+  const [exportResultPath, setExportResultPath] = useState('');
 
   const [resetPath, setResetPath] = useState('');
   const [resetConcurrency, setResetConcurrency] = useState(10);
@@ -82,6 +86,27 @@ export function DictionaryView({
   useEffect(() => {
     return EventsOn('typelens:auto-import-log', (line: string) => {
       setAutoImportLogs((current) => [...current.slice(-199), line]);
+    });
+  }, []);
+
+  useEffect(() => {
+    return EventsOn('typelens:export-log', (line: string) => {
+      setExportLogs((current) => [...current.slice(-99), line]);
+      const progressMatch = line.match(/^(\d+)%\s+(.*)$/);
+      if (!progressMatch) {
+        setExportStatusText(line);
+        return;
+      }
+      const percent = Number(progressMatch[1]);
+      const text = progressMatch[2];
+      if (Number.isFinite(percent)) {
+        setExportProgress(percent);
+      }
+      setExportStatusText(text);
+      const pathMatch = text.match(/：(.+)$/);
+      if (percent >= 100 && pathMatch) {
+        setExportResultPath(pathMatch[1].trim());
+      }
     });
   }, []);
 
@@ -334,8 +359,19 @@ export function DictionaryView({
         return;
       }
       setExportPath(selected);
+      setExportLogs([]);
+      setExportProgress(0);
+      setExportResultPath('');
+      setExportStatusText('已确认保存路径，开始导出。');
+      setBusy(true);
+      const count = await ExportDictionaryFile(selected);
+      setExportProgress(100);
+      setDialog('export');
+      onNotice({ kind: 'success', text: `已导出 ${count} 个词。` });
     } catch (error) {
       onNotice({ kind: 'error', text: stringifyError(error) });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -358,7 +394,13 @@ export function DictionaryView({
         <div />
         <div className="button-row">
           <button className="ghost-button" onClick={() => setDialog('reset')}>重置</button>
-          <button className="ghost-button" onClick={() => setDialog('export')}>导出</button>
+          <button className="ghost-button" onClick={() => {
+            setExportLogs([]);
+            setExportProgress(0);
+            setExportResultPath('');
+            setExportStatusText('等待选择保存路径');
+            setDialog('export');
+          }}>导出</button>
           <button className="ghost-button" onClick={() => {
             setImportTab('file');
             setDialog('import');
@@ -481,6 +523,7 @@ export function DictionaryView({
               busy={busy}
               logs={autoImportLogs}
               onError={(text) => onNotice({ kind: 'error', text })}
+              onScanStart={() => setAutoImportLogs([])}
               onSuccess={(result) => {
                 setPendingWords(result.words);
                 void writeDictionaryCache(words, result.words);
@@ -527,9 +570,14 @@ export function DictionaryView({
             <button className="file-button" disabled={busy} onClick={() => void selectExportPath()} type="button">{exportFileLabel}</button>
             <div className="field-hint">默认路径在 Downloads，文件名格式为 TypeLens-YYYYMMDD-HHMMSS.txt。</div>
             <div className="field-hint">导出内容为当前所有词典词条，每行一个。</div>
+            <div className="summary-box">
+              <strong>{exportProgress}%</strong>
+              <div>{exportStatusText}</div>
+              {exportResultPath ? <div className="field-hint export-path">{exportResultPath}</div> : null}
+            </div>
+            <LogConsole logs={exportLogs} busy={busy} idleText="确认保存路径后自动开始导出" />
             <div className="dialog-actions">
-              <button className="ghost-button" type="button" onClick={() => setDialog(null)}>取消</button>
-              <button className="primary-button" disabled={busy || !exportPath.trim()} type="submit">导出</button>
+              <button className="ghost-button" type="button" onClick={() => setDialog(null)}>{busy ? '后台运行中' : '关闭'}</button>
             </div>
           </form>
         </Dialog>

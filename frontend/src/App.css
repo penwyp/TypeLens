@@ -638,7 +638,7 @@ button:disabled {
 }
 
 .source-card-inline {
-  grid-template-columns: 28px 180px minmax(0, 1fr) 32px;
+  grid-template-columns: 220px minmax(0, 1fr) 32px;
   align-items: center;
   gap: 12px;
 }
@@ -648,14 +648,17 @@ button:disabled {
 }
 
 .source-inline-main {
-  display: contents;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
 }
 
 .source-label-group {
   min-width: 0;
   display: flex;
   align-items: center;
-  height: 100%;
 }
 
 .source-name,
@@ -682,14 +685,15 @@ button:disabled {
 
 .source-checkbox,
 .candidate-checkbox {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   margin: 0;
   accent-color: var(--accent);
+  flex: 0 0 auto;
 }
 
 .source-checkbox {
-  justify-self: center;
+  transform: translateY(-0.5px);
 }
 
 .source-spacer {
@@ -920,17 +924,16 @@ button:disabled {
   }
 
   .source-card-inline {
-    grid-template-columns: 28px minmax(0, 1fr);
+    grid-template-columns: 1fr;
   }
 
-  .source-label-group,
   .source-workdir-input {
-    grid-column: 2;
+    grid-column: auto;
   }
 
   .source-spacer,
   .subtle-icon-button {
-    grid-column: 2;
+    grid-column: auto;
     justify-self: end;
   }
 
