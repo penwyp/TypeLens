@@ -329,6 +329,10 @@ func isSkippableDictionaryAddError(err error) bool {
 	return ok && statusCode >= 400 && statusCode < 500
 }
 
+func IsSkippableDictionaryAddError(err error) bool {
+	return isSkippableDictionaryAddError(err)
+}
+
 func isSkippableDictionaryDeleteError(err error) bool {
 	statusCode, ok := httpStatusCodeFromError(err)
 	if !ok {

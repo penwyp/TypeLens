@@ -31,10 +31,27 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.service.ResumeAutoImportSync(ctx, newAutoImportEventWriter(ctx))
 }
 
 func (a *App) GetConfig() service.Config {
 	return a.service.Config()
+}
+
+func (a *App) GetDictionaryCache() (service.DictionaryCache, error) {
+	return a.service.LoadDictionaryCache()
+}
+
+func (a *App) SaveDictionaryCache(cache service.DictionaryCache) error {
+	return a.service.SaveDictionaryCache(cache)
+}
+
+func (a *App) GetHistoryCache(query service.HistoryQuery) ([]typeless.TranscriptRecord, error) {
+	return a.service.LoadHistoryCache(query)
+}
+
+func (a *App) SaveHistoryCache(query service.HistoryQuery, records []typeless.TranscriptRecord) error {
+	return a.service.SaveHistoryCache(query, records)
 }
 
 func (a *App) SetConfig(config service.Config) {
@@ -101,14 +118,39 @@ func (a *App) SelectTextFile() (string, error) {
 	})
 }
 
+func (a *App) DefaultAutoImportSources() ([]typeless.AutoImportSource, error) {
+	return typeless.DefaultAutoImportSources()
+}
+
+func (a *App) ScanAutoImportSources(request service.AutoImportScanRequest) (typeless.AutoImportScanResult, error) {
+	return a.service.ScanAutoImport(a.ctx, request)
+}
+
+func (a *App) ConfirmAutoImport(request service.AutoImportConfirmRequest) (service.AutoImportConfirmResult, error) {
+	return a.service.ConfirmAutoImport(a.ctx, request, newAutoImportEventWriter(a.ctx))
+}
+
+func (a *App) ListPendingImportedWords() ([]typeless.PendingDictionaryWord, error) {
+	return a.service.ListPendingAutoImportWords()
+}
+
 type eventWriter struct {
 	ctx   context.Context
 	event string
 	mu    sync.Mutex
 }
 
+type autoImportEventWriter struct {
+	ctx context.Context
+	mu  sync.Mutex
+}
+
 func newEventWriter(ctx context.Context, event string) io.Writer {
 	return &eventWriter{ctx: ctx, event: event}
+}
+
+func newAutoImportEventWriter(ctx context.Context) io.Writer {
+	return &autoImportEventWriter{ctx: ctx}
 }
 
 func (w *eventWriter) Write(p []byte) (int, error) {
@@ -125,6 +167,31 @@ func (w *eventWriter) Write(p []byte) (int, error) {
 			continue
 		}
 		runtime.EventsEmit(w.ctx, w.event, line)
+	}
+	return len(p), nil
+}
+
+func (w *autoImportEventWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	text := strings.TrimSpace(string(p))
+	if text == "" {
+		return len(p), nil
+	}
+	completed := false
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		runtime.EventsEmit(w.ctx, "typelens:auto-import-log", line)
+		if line == "后台自动导入同步已完成。" || line == "没有待同步词条。" {
+			completed = true
+		}
+	}
+	if completed {
+		runtime.EventsEmit(w.ctx, "typelens:auto-import-finished")
 	}
 	return len(p), nil
 }

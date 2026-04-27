@@ -10,8 +10,16 @@ export function ClearDictionary() {
   return window['go']['main']['App']['ClearDictionary']();
 }
 
+export function ConfirmAutoImport(arg1) {
+  return window['go']['main']['App']['ConfirmAutoImport'](arg1);
+}
+
 export function CopyText(arg1) {
   return window['go']['main']['App']['CopyText'](arg1);
+}
+
+export function DefaultAutoImportSources() {
+  return window['go']['main']['App']['DefaultAutoImportSources']();
 }
 
 export function DeleteDictionaryWord(arg1) {
@@ -22,6 +30,14 @@ export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
+export function GetDictionaryCache() {
+  return window['go']['main']['App']['GetDictionaryCache']();
+}
+
+export function GetHistoryCache(arg1) {
+  return window['go']['main']['App']['GetHistoryCache'](arg1);
+}
+
 export function ImportDictionaryFile(arg1, arg2, arg3) {
   return window['go']['main']['App']['ImportDictionaryFile'](arg1, arg2, arg3);
 }
@@ -30,12 +46,28 @@ export function ListDictionaryWords() {
   return window['go']['main']['App']['ListDictionaryWords']();
 }
 
+export function ListPendingImportedWords() {
+  return window['go']['main']['App']['ListPendingImportedWords']();
+}
+
 export function QueryHistory(arg1) {
   return window['go']['main']['App']['QueryHistory'](arg1);
 }
 
 export function ResetDictionary(arg1, arg2) {
   return window['go']['main']['App']['ResetDictionary'](arg1, arg2);
+}
+
+export function SaveDictionaryCache(arg1) {
+  return window['go']['main']['App']['SaveDictionaryCache'](arg1);
+}
+
+export function SaveHistoryCache(arg1, arg2) {
+  return window['go']['main']['App']['SaveHistoryCache'](arg1, arg2);
+}
+
+export function ScanAutoImportSources(arg1) {
+  return window['go']['main']['App']['ScanAutoImportSources'](arg1);
 }
 
 export function SelectTextFile() {

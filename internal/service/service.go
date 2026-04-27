@@ -6,16 +6,19 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/penwyp/typelens/pkg/typeless"
 )
 
 type Config struct {
-	UserDataPath string `json:"userDataPath"`
-	DBPath       string `json:"dbPath"`
-	APIHost      string `json:"apiHost"`
-	TimeoutSec   int    `json:"timeoutSec"`
+	UserDataPath        string `json:"userDataPath"`
+	DBPath              string `json:"dbPath"`
+	APIHost             string `json:"apiHost"`
+	TimeoutSec          int    `json:"timeoutSec"`
+	AutoImportStatePath string `json:"autoImportStatePath"`
+	CachePath           string `json:"cachePath"`
 }
 
 type HistoryQuery struct {
@@ -44,7 +47,9 @@ type ClearRequest struct {
 }
 
 type Service struct {
-	config Config
+	config            Config
+	autoImportMu      sync.Mutex
+	autoImportRunning bool
 }
 
 func DefaultConfig() (Config, error) {
@@ -56,11 +61,21 @@ func DefaultConfig() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	autoImportStatePath, err := typeless.DefaultAutoImportStatePath()
+	if err != nil {
+		return Config{}, err
+	}
+	cachePath, err := typeless.DefaultCachePath()
+	if err != nil {
+		return Config{}, err
+	}
 	return normalizeConfig(Config{
-		UserDataPath: userDataPath,
-		DBPath:       dbPath,
-		APIHost:      typeless.DefaultAPIHost,
-		TimeoutSec:   15,
+		UserDataPath:        userDataPath,
+		DBPath:              dbPath,
+		APIHost:             typeless.DefaultAPIHost,
+		TimeoutSec:          15,
+		AutoImportStatePath: autoImportStatePath,
+		CachePath:           cachePath,
 	}), nil
 }
 
@@ -204,11 +219,23 @@ func normalizeConfig(config Config) Config {
 	config.UserDataPath = strings.TrimSpace(config.UserDataPath)
 	config.DBPath = strings.TrimSpace(config.DBPath)
 	config.APIHost = strings.TrimSpace(config.APIHost)
+	config.AutoImportStatePath = strings.TrimSpace(config.AutoImportStatePath)
+	config.CachePath = strings.TrimSpace(config.CachePath)
 	if config.APIHost == "" {
 		config.APIHost = typeless.DefaultAPIHost
 	}
 	if config.TimeoutSec <= 0 {
 		config.TimeoutSec = 15
+	}
+	if config.AutoImportStatePath == "" {
+		if defaultPath, err := typeless.DefaultAutoImportStatePath(); err == nil {
+			config.AutoImportStatePath = defaultPath
+		}
+	}
+	if config.CachePath == "" {
+		if defaultPath, err := typeless.DefaultCachePath(); err == nil {
+			config.CachePath = defaultPath
+		}
 	}
 	return config
 }

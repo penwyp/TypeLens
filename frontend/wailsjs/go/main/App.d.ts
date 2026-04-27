@@ -7,19 +7,35 @@ export function AddDictionaryTerm(arg1:string):Promise<void>;
 
 export function ClearDictionary():Promise<number>;
 
+export function ConfirmAutoImport(arg1:service.AutoImportConfirmRequest):Promise<service.AutoImportConfirmResult>;
+
 export function CopyText(arg1:string):Promise<void>;
+
+export function DefaultAutoImportSources():Promise<Array<typeless.AutoImportSource>>;
 
 export function DeleteDictionaryWord(arg1:string):Promise<void>;
 
 export function GetConfig():Promise<service.Config>;
 
+export function GetDictionaryCache():Promise<service.DictionaryCache>;
+
+export function GetHistoryCache(arg1:service.HistoryQuery):Promise<Array<typeless.TranscriptRecord>>;
+
 export function ImportDictionaryFile(arg1:string,arg2:number,arg3:boolean):Promise<typeless.ImportResult>;
 
 export function ListDictionaryWords():Promise<Array<typeless.DictionaryWord>>;
 
+export function ListPendingImportedWords():Promise<Array<typeless.PendingDictionaryWord>>;
+
 export function QueryHistory(arg1:service.HistoryQuery):Promise<Array<typeless.TranscriptRecord>>;
 
 export function ResetDictionary(arg1:string,arg2:number):Promise<typeless.ResetResult>;
+
+export function SaveDictionaryCache(arg1:service.DictionaryCache):Promise<void>;
+
+export function SaveHistoryCache(arg1:service.HistoryQuery,arg2:Array<typeless.TranscriptRecord>):Promise<void>;
+
+export function ScanAutoImportSources(arg1:service.AutoImportScanRequest):Promise<typeless.AutoImportScanResult>;
 
 export function SelectTextFile():Promise<string>;
 
