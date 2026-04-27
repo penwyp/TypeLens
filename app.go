@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/penwyp/typelens/internal/service"
 	"github.com/penwyp/typelens/pkg/typeless"
@@ -115,6 +116,31 @@ func (a *App) SelectTextFile() (string, error) {
 				Pattern:     "*.*",
 			},
 		},
+	})
+}
+
+func (a *App) SelectDictionaryExportFile() (string, error) {
+	defaultDir, err := typeless.DefaultDictionaryExportDir()
+	if err != nil {
+		return "", err
+	}
+	defaultName := typeless.DefaultDictionaryExportFilename(time.Now())
+	return runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:            "导出词典",
+		DefaultDirectory: defaultDir,
+		DefaultFilename:  defaultName,
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: "Text Files (*.txt)",
+				Pattern:     "*.txt",
+			},
+		},
+	})
+}
+
+func (a *App) ExportDictionaryFile(filePath string) (int, error) {
+	return a.service.ExportDictionary(a.ctx, service.ExportRequest{
+		FilePath: filePath,
 	})
 }
 

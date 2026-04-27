@@ -12,16 +12,11 @@ type AutoImportPanelProps = {
   onSuccess: (result: service.AutoImportConfirmResult) => void;
 };
 
-type SourceDraft = {
-  name: string;
-  source: typeless.AutoImportSource;
-};
-
 export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPanelProps) {
   const [step, setStep] = useState<AutoImportStep>('sources');
   const [loadingDefaults, setLoadingDefaults] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
-  const [sources, setSources] = useState<SourceDraft[]>([]);
+  const [sources, setSources] = useState<typeless.AutoImportSource[]>([]);
   const [scanResult, setScanResult] = useState<typeless.AutoImportScanResult | null>(null);
   const [selectedTerms, setSelectedTerms] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
@@ -33,10 +28,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
         setLoadingDefaults(true);
         const defaults = await DefaultAutoImportSources();
         if (!canceled) {
-          setSources(defaults.map((source) => ({
-            name: platformLabel(source.platform),
-            source,
-          })));
+          setSources(defaults);
         }
       } catch (error) {
         if (!canceled) {
@@ -72,7 +64,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
     try {
       setActionBusy(true);
       const result = await ScanAutoImportSources(new service.AutoImportScanRequest({
-        sources: sources.map((item) => item.source),
+        sources,
       }));
       setScanResult(result);
       setSearch('');
@@ -122,11 +114,10 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
         enabled: true,
         workdir: '',
       },
-      name: 'Custom',
     ]);
   }
 
-  function updateSource(index: number, nextSource: SourceDraft) {
+  function updateSource(index: number, nextSource: typeless.AutoImportSource) {
     setSources((current) => current.map((source, sourceIndex) => sourceIndex === index ? nextSource : source));
   }
 
@@ -141,33 +132,25 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
           <div className="field-hint auto-import-hint">扫描 `history.jsonl` 以及目录下的 `*.jsonl` 记录，提取候选词。</div>
           <div className="auto-import-source-list">
             {sources.map((source, index) => (
-              <div className="source-card source-card-inline" key={`${source.source.platform}-${index}`}>
+              <div className="source-card source-card-inline" key={`${source.platform}-${index}`}>
                 <label className="source-inline-main">
                   <input
-                    checked={source.source.enabled}
-                    onChange={(event) => updateSource(index, { ...source, source: { ...source.source, enabled: event.target.checked } })}
+                    className="source-checkbox"
+                    checked={source.enabled}
+                    onChange={(event) => updateSource(index, { ...source, enabled: event.target.checked })}
                     type="checkbox"
                   />
                   <div className="source-label-group">
-                    {source.source.platform === 'custom' ? (
-                      <input
-                        className="source-name-input"
-                        value={source.name}
-                        onChange={(event) => updateSource(index, { ...source, name: event.target.value })}
-                        placeholder="Custom"
-                      />
-                    ) : (
-                      <span className="source-name">{source.name}</span>
-                    )}
+                    <span className="source-name">{sourceLabel(source.platform)}</span>
                   </div>
                 </label>
                 <input
                   className="source-workdir-input"
-                  value={source.source.workdir}
-                  onChange={(event) => updateSource(index, { ...source, source: { ...source.source, workdir: event.target.value } })}
+                  value={source.workdir}
+                  onChange={(event) => updateSource(index, { ...source, workdir: event.target.value })}
                   placeholder="输入目录"
                 />
-                {source.source.platform === 'custom' ? (
+                {source.platform === 'custom' ? (
                   <button className="icon-button subtle-icon-button" type="button" onClick={() => removeSource(index)} aria-label="删除类别">×</button>
                 ) : (
                   <div className="source-spacer" />
@@ -176,7 +159,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
             ))}
           </div>
           <div className="dialog-actions spread-actions">
-            <button className="ghost-button add-source-button" type="button" onClick={addCustomSource}>+ Custom</button>
+            <button className="ghost-button add-source-button" type="button" onClick={addCustomSource}>+ 添加其他目录</button>
             <button
               className="primary-button"
               disabled={loadingDefaults || busy || actionBusy || !sources.some((item) => item.enabled && item.workdir.trim())}
@@ -209,6 +192,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
             {filteredItems.map((item) => (
               <label className="candidate-row" key={`${item.platform}-${item.normalized_term}`}>
                 <input
+                  className="candidate-checkbox"
                   checked={selectedTerms[item.normalized_term] !== false}
                   onChange={(event) => setSelectedTerms((current) => ({ ...current, [item.normalized_term]: event.target.checked }))}
                   type="checkbox"
@@ -216,7 +200,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
                 <div className="candidate-main">
                   <div className="candidate-header">
                     <strong>{item.term}</strong>
-                    <span className="candidate-meta">{platformLabel(item.platform)} · {item.hits} 次</span>
+                    <span className="candidate-meta">{sourceLabel(item.platform)} · {item.hits} 次</span>
                   </div>
                   <div className="candidate-example">{item.examples[0] ?? '无示例'}</div>
                 </div>
@@ -242,7 +226,7 @@ export function AutoImportPanel({ busy, logs, onError, onSuccess }: AutoImportPa
                 <div className="candidate-main">
                   <div className="candidate-header">
                     <strong>{item.term}</strong>
-                    <span className="candidate-meta">{platformLabel(item.platform)}</span>
+                    <span className="candidate-meta">{sourceLabel(item.platform)}</span>
                   </div>
                   <div className="candidate-example">{item.examples[0] ?? '无示例'}</div>
                 </div>
@@ -271,7 +255,7 @@ function SummaryMetric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function platformLabel(platform: string) {
+function sourceLabel(platform: string) {
   const normalized = platform.trim().toLowerCase();
   if (normalized === 'codex') {
     return 'Codex';
@@ -279,10 +263,7 @@ function platformLabel(platform: string) {
   if (normalized === 'claude') {
     return 'Claude';
   }
-  if (normalized === 'custom') {
-    return 'Custom';
-  }
-  return platform.trim() || 'Custom';
+  return '其他目录';
 }
 
 function stringifyError(error: unknown) {

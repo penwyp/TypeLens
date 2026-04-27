@@ -46,6 +46,10 @@ type ClearRequest struct {
 	LogWriter   io.Writer
 }
 
+type ExportRequest struct {
+	FilePath string
+}
+
 type Service struct {
 	config            Config
 	autoImportMu      sync.Mutex
@@ -174,6 +178,26 @@ func (s *Service) QueryHistory(ctx context.Context, query HistoryQuery) ([]typel
 
 func (s *Service) CopyText(ctx context.Context, text string) error {
 	return typeless.CopyToClipboard(ctx, text)
+}
+
+func (s *Service) ExportDictionary(ctx context.Context, request ExportRequest) (int, error) {
+	filePath := strings.TrimSpace(request.FilePath)
+	if filePath == "" {
+		return 0, fmt.Errorf("导出文件不能为空")
+	}
+	words, err := s.newDictionaryClient().ListAll(ctx)
+	if err != nil {
+		return 0, err
+	}
+	pending, err := typeless.LoadPendingDictionaryWords(s.config.AutoImportStatePath)
+	if err != nil {
+		return 0, err
+	}
+	terms := typeless.MergeDictionaryExportTerms(words, pending)
+	if err := typeless.WriteDictionaryTermsFile(filePath, terms); err != nil {
+		return 0, err
+	}
+	return len(terms), nil
 }
 
 func (s *Service) resolveHistoryContext(ctx context.Context, userID, mode string) (typeless.AppContext, error) {

@@ -15,6 +15,8 @@ export function DefaultAutoImportSources():Promise<Array<typeless.AutoImportSour
 
 export function DeleteDictionaryWord(arg1:string):Promise<void>;
 
+export function ExportDictionaryFile(arg1:string):Promise<number>;
+
 export function GetConfig():Promise<service.Config>;
 
 export function GetDictionaryCache():Promise<service.DictionaryCache>;
@@ -36,6 +38,8 @@ export function SaveDictionaryCache(arg1:service.DictionaryCache):Promise<void>;
 export function SaveHistoryCache(arg1:service.HistoryQuery,arg2:Array<typeless.TranscriptRecord>):Promise<void>;
 
 export function ScanAutoImportSources(arg1:service.AutoImportScanRequest):Promise<typeless.AutoImportScanResult>;
+
+export function SelectDictionaryExportFile():Promise<string>;
 
 export function SelectTextFile():Promise<string>;
 

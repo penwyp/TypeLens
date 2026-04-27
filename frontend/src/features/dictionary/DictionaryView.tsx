@@ -3,24 +3,27 @@ import {
   AddDictionaryTerm,
   CopyText,
   DeleteDictionaryWord,
+  ExportDictionaryFile,
   ImportDictionaryFile,
   ListDictionaryWords,
   ListPendingImportedWords,
   ResetDictionary,
+  SelectDictionaryExportFile,
   SelectTextFile,
 } from '../../../wailsjs/go/main/App';
 import { typeless } from '../../../wailsjs/go/models';
 import { EventsOn } from '../../../wailsjs/runtime/runtime';
 import { readDictionaryCache, writeDictionaryCache } from '../../cache';
 import { Dialog, LogConsole } from '../../components/Dialog';
-import { AutoImportDialog } from './AutoImportDialog';
+import { AutoImportPanel } from './AutoImportPanel';
 
 type Notice = {
   kind: 'success' | 'error' | 'info';
   text: string;
 };
 
-type DialogKind = 'add' | 'edit' | 'import' | 'reset' | 'auto-import' | null;
+type DialogKind = 'add' | 'edit' | 'import' | 'reset' | 'export' | null;
+type ImportTab = 'file' | 'auto';
 type WordMenu = {
   x: number;
   y: number;
@@ -45,6 +48,7 @@ export function DictionaryView({
   const [busy, setBusy] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const [importTab, setImportTab] = useState<ImportTab>('file');
   const [wordMenu, setWordMenu] = useState<WordMenu>(null);
 
   const [words, setWords] = useState<typeless.DictionaryWord[]>([]);
@@ -57,6 +61,7 @@ export function DictionaryView({
   const [importConcurrency, setImportConcurrency] = useState(10);
   const [importSummary, setImportSummary] = useState<typeless.ImportResult | null>(null);
   const [operationLogs, setOperationLogs] = useState<string[]>([]);
+  const [exportPath, setExportPath] = useState('');
 
   const [resetPath, setResetPath] = useState('');
   const [resetConcurrency, setResetConcurrency] = useState(10);
@@ -265,6 +270,20 @@ export function DictionaryView({
     }
   }
 
+  async function exportWords(event: FormEvent) {
+    event.preventDefault();
+    try {
+      setBusy(true);
+      const count = await ExportDictionaryFile(exportPath);
+      setDialog(null);
+      onNotice({ kind: 'success', text: `已导出 ${count} 个词。` });
+    } catch (error) {
+      onNotice({ kind: 'error', text: stringifyError(error) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteWord(entry: DictionaryEntry) {
     if (entry.kind !== 'remote') {
       onNotice({ kind: 'info', text: '待同步词条暂不支持删除。' });
@@ -308,6 +327,18 @@ export function DictionaryView({
     }
   }
 
+  async function selectExportPath() {
+    try {
+      const selected = await SelectDictionaryExportFile();
+      if (!selected) {
+        return;
+      }
+      setExportPath(selected);
+    } catch (error) {
+      onNotice({ kind: 'error', text: stringifyError(error) });
+    }
+  }
+
   function handleDictionaryScroll(event: UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
     if (visibleWordCount >= entries.length || element.scrollTop + element.clientHeight < element.scrollHeight - 80) {
@@ -318,6 +349,7 @@ export function DictionaryView({
 
   const importFileLabel = summarizePath(importPath, '选择文件');
   const resetFileLabel = summarizePath(resetPath, '使用内置词表');
+  const exportFileLabel = summarizePath(exportPath, '选择保存路径');
   const visibleEntries = entries.slice(0, visibleWordCount);
 
   return (
@@ -326,11 +358,11 @@ export function DictionaryView({
         <div />
         <div className="button-row">
           <button className="ghost-button" onClick={() => setDialog('reset')}>重置</button>
-          <button className="ghost-button" onClick={() => setDialog('import')}>导入</button>
+          <button className="ghost-button" onClick={() => setDialog('export')}>导出</button>
           <button className="ghost-button" onClick={() => {
-            setAutoImportLogs([]);
-            setDialog('auto-import');
-          }}>自动导入</button>
+            setImportTab('file');
+            setDialog('import');
+          }}>导入</button>
           <button className="primary-button" onClick={() => setDialog('add')}>新增</button>
         </div>
       </div>
@@ -418,27 +450,45 @@ export function DictionaryView({
 
       {dialog === 'import' ? (
         <Dialog title="导入文件" onClose={() => setDialog(null)}>
-          <form className="dialog-form" onSubmit={importWords}>
-            <button className="file-button" disabled={busy} onClick={() => void selectPath('import')} type="button">{importFileLabel}</button>
-            <div className="field-hint">文件格式：每行一个词。</div>
-            <label>
-              <span>并发</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={10}
-                value={importConcurrency}
-                onChange={(event) => setImportConcurrency(clampConcurrency(event.target.value))}
-              />
-            </label>
-            <div className="dialog-actions">
-              <button className="ghost-button" type="button" onClick={() => setDialog(null)}>取消</button>
-              <button className="primary-button" disabled={busy || !importPath.trim()} type="submit">导入</button>
-            </div>
-            {importSummary ? <div className="summary-box">输入 {importSummary.TotalInput}，去重后 {importSummary.Unique}，跳过 {importSummary.Skipped}，导入 {importSummary.Imported}</div> : null}
-            <LogConsole logs={operationLogs} busy={busy} />
-          </form>
+          <div className="dialog-tabs">
+            <button className={importTab === 'file' ? 'dialog-tab active' : 'dialog-tab'} type="button" onClick={() => setImportTab('file')}>导入文件</button>
+            <button className={importTab === 'auto' ? 'dialog-tab active' : 'dialog-tab'} type="button" onClick={() => setImportTab('auto')}>自动导入</button>
+          </div>
+          {importTab === 'file' ? (
+            <form className="dialog-form" onSubmit={importWords}>
+              <button className="file-button" disabled={busy} onClick={() => void selectPath('import')} type="button">{importFileLabel}</button>
+              <div className="field-hint">文件格式：每行一个词。</div>
+              <label>
+                <span>并发</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={10}
+                  value={importConcurrency}
+                  onChange={(event) => setImportConcurrency(clampConcurrency(event.target.value))}
+                />
+              </label>
+              <div className="dialog-actions">
+                <button className="ghost-button" type="button" onClick={() => setDialog(null)}>取消</button>
+                <button className="primary-button" disabled={busy || !importPath.trim()} type="submit">导入</button>
+              </div>
+              {importSummary ? <div className="summary-box">输入 {importSummary.TotalInput}，去重后 {importSummary.Unique}，跳过 {importSummary.Skipped}，导入 {importSummary.Imported}</div> : null}
+              <LogConsole logs={operationLogs} busy={busy} />
+            </form>
+          ) : (
+            <AutoImportPanel
+              busy={busy}
+              logs={autoImportLogs}
+              onError={(text) => onNotice({ kind: 'error', text })}
+              onSuccess={(result) => {
+                setPendingWords(result.words);
+                void writeDictionaryCache(words, result.words);
+                setDialog(null);
+                onNotice({ kind: 'success', text: `已成功导入 ${result.accepted_count} 个词，后台同步中。` });
+              }}
+            />
+          )}
         </Dialog>
       ) : null}
 
@@ -471,19 +521,18 @@ export function DictionaryView({
         </Dialog>
       ) : null}
 
-      {dialog === 'auto-import' ? (
-        <AutoImportDialog
-          busy={busy}
-          logs={autoImportLogs}
-          onClose={() => setDialog(null)}
-          onError={(text) => onNotice({ kind: 'error', text })}
-          onSuccess={(result) => {
-            setPendingWords(result.words);
-            void writeDictionaryCache(words, result.words);
-            setDialog(null);
-            onNotice({ kind: 'success', text: `已成功导入 ${result.accepted_count} 个词，后台同步中。` });
-          }}
-        />
+      {dialog === 'export' ? (
+        <Dialog title="导出词典" onClose={() => setDialog(null)}>
+          <form className="dialog-form" onSubmit={exportWords}>
+            <button className="file-button" disabled={busy} onClick={() => void selectExportPath()} type="button">{exportFileLabel}</button>
+            <div className="field-hint">默认路径在 Downloads，文件名格式为 TypeLens-YYYYMMDD-HHMMSS.txt。</div>
+            <div className="field-hint">导出内容为当前所有词典词条，每行一个。</div>
+            <div className="dialog-actions">
+              <button className="ghost-button" type="button" onClick={() => setDialog(null)}>取消</button>
+              <button className="primary-button" disabled={busy || !exportPath.trim()} type="submit">导出</button>
+            </div>
+          </form>
+        </Dialog>
       ) : null}
 
       {wordMenu ? (

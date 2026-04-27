@@ -26,6 +26,10 @@ export function DeleteDictionaryWord(arg1) {
   return window['go']['main']['App']['DeleteDictionaryWord'](arg1);
 }
 
+export function ExportDictionaryFile(arg1) {
+  return window['go']['main']['App']['ExportDictionaryFile'](arg1);
+}
+
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
@@ -68,6 +72,10 @@ export function SaveHistoryCache(arg1, arg2) {
 
 export function ScanAutoImportSources(arg1) {
   return window['go']['main']['App']['ScanAutoImportSources'](arg1);
+}
+
+export function SelectDictionaryExportFile() {
+  return window['go']['main']['App']['SelectDictionaryExportFile']();
 }
 
 export function SelectTextFile() {

@@ -133,6 +133,29 @@
   line-height: 1.5;
 }
 
+.dialog-tabs {
+  display: inline-flex;
+  gap: 8px;
+  margin: 0 24px 8px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(7, 21, 44, 0.08);
+}
+
+.dialog-tab {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(7, 21, 44, 0.68);
+}
+
+.dialog-tab.active {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--card-ink);
+  box-shadow: 0 8px 20px rgba(7, 21, 44, 0.08);
+}
+
 .search-box {
   position: relative;
   width: min(840px, 100%);
@@ -614,6 +637,81 @@ button:disabled {
   padding: 14px;
 }
 
+.source-card-inline {
+  grid-template-columns: 28px 180px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 12px;
+}
+
+.auto-import-hint {
+  margin-top: 0;
+}
+
+.source-inline-main {
+  display: contents;
+}
+
+.source-label-group {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.source-name,
+.source-name-input {
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.source-name-input {
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid rgba(7, 21, 44, 0.14);
+  border-radius: 0;
+  background: transparent;
+}
+
+.source-workdir-input {
+  min-width: 0;
+  width: 100%;
+}
+
+.source-checkbox,
+.candidate-checkbox {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.source-checkbox {
+  justify-self: center;
+}
+
+.source-spacer {
+  width: 32px;
+  min-height: 1px;
+}
+
+.subtle-icon-button {
+  min-height: 32px;
+  border-color: rgba(7, 21, 44, 0.08);
+  background: rgba(7, 21, 44, 0.04);
+  color: rgba(7, 21, 44, 0.7);
+}
+
+.spread-actions {
+  justify-content: space-between;
+}
+
+.add-source-button {
+  min-width: 120px;
+}
+
 .source-toggle {
   grid-template-columns: auto 1fr;
   align-items: center;
@@ -813,6 +911,30 @@ button:disabled {
   }
 
   .preview-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dialog-tabs {
+    margin-inline: 16px;
+  }
+
+  .source-card-inline {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .source-label-group,
+  .source-workdir-input {
+    grid-column: 2;
+  }
+
+  .source-spacer,
+  .subtle-icon-button {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .spread-actions {
     flex-direction: column;
     align-items: stretch;
   }
