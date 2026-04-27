@@ -55,10 +55,7 @@ func TestScanAutoImportCandidatesE2E(t *testing.T) {
 
 	assertContainsCandidate(t, result.Items, "TypeLens")
 	assertContainsCandidate(t, result.Items, "ClaudeProbe")
-	assertContainsCandidate(t, result.Items, "Claude")
-	assertContainsCandidate(t, result.Items, "Probe")
 	assertContainsCandidate(t, result.Items, "agent_os")
-	assertContainsCandidate(t, result.Items, "agent")
 	assertContainsCandidate(t, result.Items, "sub2api")
 	assertContainsCandidate(t, result.Items, "TiDBCluster")
 

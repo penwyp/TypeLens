@@ -29,13 +29,19 @@ func TestParseClaudeProjectLine(t *testing.T) {
 
 func TestExtractTokensFromMessage(t *testing.T) {
 	tokens := extractTokensFromMessage("请处理 TypeLens、ClaudeProbe、agent_os 和自动导入逻辑")
-	for _, want := range []string{"TypeLens", "ClaudeProbe", "Claude", "Probe", "agent_os", "agent"} {
+	for _, want := range []string{"TypeLens", "ClaudeProbe", "agent_os"} {
 		if !slices.Contains(tokens, want) {
 			t.Fatalf("tokens %v does not contain %q", tokens, want)
 		}
 	}
-	if !slices.Contains(tokens, "导入") {
-		t.Fatalf("tokens %v does not contain expected Chinese candidate", tokens)
+}
+
+func TestExtractTokensFromMessageMergesProtectedPhrases(t *testing.T) {
+	tokens := extractTokensFromMessage("请解释 Claude Code 的 keyword extraction 方案")
+	for _, want := range []string{"Claude_Code", "keyword_extraction"} {
+		if !slices.Contains(tokens, want) {
+			t.Fatalf("tokens %v does not contain %q", tokens, want)
+		}
 	}
 }
 
@@ -78,34 +84,35 @@ func TestMergePendingCandidates(t *testing.T) {
 	}
 }
 
-func TestRankAutoImportCandidatesDropsPlainEnglishNoise(t *testing.T) {
-	candidates := []AutoImportCandidate{
-		{Term: "update", NormalizedTerm: "update", Hits: 9},
-		{Term: "response", NormalizedTerm: "response", Hits: 8},
-		{Term: "TypeLens", NormalizedTerm: "typelens", Hits: 3},
-		{Term: "ClaudeProbe", NormalizedTerm: "claudeprobe", Hits: 2},
-		{Term: "agent_os", NormalizedTerm: "agent_os", Hits: 2},
-	}
+func TestExtractAutoImportCandidatesDropsPlainEnglishNoise(t *testing.T) {
+	candidates := extractAutoImportCandidates([]autoImportMessage{
+		{Platform: AutoImportPlatformCodex, Text: "please update the response and create the build result"},
+		{Platform: AutoImportPlatformCodex, Text: "请继续处理 TypeLens 和 ClaudeProbe"},
+		{Platform: AutoImportPlatformClaude, Text: "请继续处理 TypeLens、agent_os 和 sub2api"},
+	})
 
-	ranked := rankAutoImportCandidates(candidates, 20)
-	got := make([]string, 0, len(ranked))
-	for _, item := range ranked {
+	got := make([]string, 0, len(candidates))
+	for _, item := range candidates {
 		got = append(got, item.NormalizedTerm)
 	}
-
-	for _, rejected := range []string{"update", "response"} {
+	for _, rejected := range []string{"update", "response", "build", "result"} {
 		if slices.Contains(got, rejected) {
-			t.Fatalf("ranked candidates unexpectedly contain %q: %v", rejected, got)
+			t.Fatalf("candidates unexpectedly contain %q: %v", rejected, got)
 		}
 	}
-	for _, expected := range []string{"typelens", "claudeprobe", "agent_os"} {
+	for _, expected := range []string{"typelens", "claudeprobe", "agent_os", "sub2api"} {
 		if !slices.Contains(got, expected) {
-			t.Fatalf("ranked candidates missing %q: %v", expected, got)
+			t.Fatalf("candidates missing %q: %v", expected, got)
+		}
+	}
+	for _, rejected := range []string{"type", "lens", "claude", "probe", "agent"} {
+		if slices.Contains(got, rejected) {
+			t.Fatalf("candidates unexpectedly contain fragment %q: %v", rejected, got)
 		}
 	}
 }
 
-func TestRankAutoImportCandidatesKeepsOnlyTopLimit(t *testing.T) {
+func TestLimitAutoImportCandidatesKeepsOnlyTopLimit(t *testing.T) {
 	candidates := make([]AutoImportCandidate, 0, autoImportMaxFinalCandidates+20)
 	for index := 0; index < autoImportMaxFinalCandidates+20; index++ {
 		term := "ProjToken" + string(rune('A'+(index%26))) + string(rune('a'+((index/26)%26))) + string(rune('a'+((index/676)%26)))
@@ -116,7 +123,7 @@ func TestRankAutoImportCandidatesKeepsOnlyTopLimit(t *testing.T) {
 		})
 	}
 
-	ranked := rankAutoImportCandidates(candidates, autoImportMaxFinalCandidates+100)
+	ranked := limitAutoImportCandidates(candidates)
 	if len(ranked) != autoImportMaxFinalCandidates {
 		t.Fatalf("ranked len = %d, want %d", len(ranked), autoImportMaxFinalCandidates)
 	}

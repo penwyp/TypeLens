@@ -491,12 +491,12 @@ export function DictionaryView({
       ) : null}
 
       {dialog === 'import' ? (
-        <Dialog title="导入文件" onClose={() => setDialog(null)}>
+        <Dialog title="导入文件" className="dialog-wide dialog-import" onClose={() => setDialog(null)}>
           <div className="dialog-tabs">
             <button className={importTab === 'file' ? 'dialog-tab active' : 'dialog-tab'} type="button" onClick={() => setImportTab('file')}>导入文件</button>
             <button className={importTab === 'auto' ? 'dialog-tab active' : 'dialog-tab'} type="button" onClick={() => setImportTab('auto')}>自动导入</button>
           </div>
-          {importTab === 'file' ? (
+          <div className={importTab === 'file' ? 'tab-panel active' : 'tab-panel hidden'} aria-hidden={importTab !== 'file'}>
             <form className="dialog-form" onSubmit={importWords}>
               <button className="file-button" disabled={busy} onClick={() => void selectPath('import')} type="button">{importFileLabel}</button>
               <div className="field-hint">文件格式：每行一个词。</div>
@@ -518,7 +518,8 @@ export function DictionaryView({
               {importSummary ? <div className="summary-box">输入 {importSummary.TotalInput}，去重后 {importSummary.Unique}，跳过 {importSummary.Skipped}，导入 {importSummary.Imported}</div> : null}
               <LogConsole logs={operationLogs} busy={busy} />
             </form>
-          ) : (
+          </div>
+          <div className={importTab === 'auto' ? 'tab-panel active' : 'tab-panel hidden'} aria-hidden={importTab !== 'auto'}>
             <AutoImportPanel
               busy={busy}
               logs={autoImportLogs}
@@ -531,7 +532,7 @@ export function DictionaryView({
                 onNotice({ kind: 'success', text: `已成功导入 ${result.accepted_count} 个词，后台同步中。` });
               }}
             />
-          )}
+          </div>
         </Dialog>
       ) : null}
 

@@ -1,9 +1,9 @@
 import { ReactNode } from 'react';
 
-export function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+export function Dialog({ title, children, onClose, className = '' }: { title: string; children: ReactNode; onClose: () => void; className?: string }) {
   return (
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
-      <section className="dialog" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+      <section className={`dialog ${className}`.trim()} role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
         <div className="dialog-header">
           <h2>{title}</h2>
           <button className="icon-button" onClick={onClose} type="button" aria-label="关闭">×</button>

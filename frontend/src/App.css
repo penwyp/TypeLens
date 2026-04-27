@@ -518,6 +518,10 @@ button:disabled {
   box-shadow: 0 32px 110px rgba(0, 0, 0, 0.32);
 }
 
+.dialog-wide {
+  width: min(920px, 100%);
+}
+
 .dialog-header {
   min-height: 58px;
   display: flex;
@@ -547,6 +551,10 @@ button:disabled {
 .dialog-form label span {
   color: var(--card-muted);
   font-size: 12px;
+}
+
+.tab-panel.hidden {
+  display: none;
 }
 
 .dialog-actions {
@@ -664,8 +672,8 @@ button:disabled {
 .source-name,
 .source-name-input {
   min-width: 0;
-  font-size: 18px;
-  font-weight: 800;
+  font-size: 15px;
+  font-weight: 600;
   letter-spacing: 0.01em;
 }
 

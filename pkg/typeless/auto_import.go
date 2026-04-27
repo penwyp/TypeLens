@@ -280,7 +280,7 @@ func scanAutoImportCandidates(
 		}
 		filtered = append(filtered, candidate)
 	}
-	filtered = rankAutoImportCandidates(filtered, summary.messages)
+	filtered = limitAutoImportCandidates(filtered)
 	result.FilteredCandidates = len(filtered)
 	result.Items = filtered
 	emitAutoImportLog(progressWriter, "差集过滤完成，最终候选词 %d 个。", result.FilteredCandidates)
@@ -481,7 +481,7 @@ func parseAutoImportFile(platform, path string) ([]autoImportMessage, error) {
 		}
 		for _, text := range texts {
 			text = normalizeAutoImportMessage(text)
-			if text == "" {
+			if text == "" || isNoisyAutoImportMessage(text) {
 				continue
 			}
 			messages = append(messages, autoImportMessage{
@@ -700,12 +700,27 @@ func normalizeAutoImportMessage(text string) string {
 	return text
 }
 
+func isNoisyAutoImportMessage(text string) bool {
+	lower := strings.ToLower(text)
+	for _, snippet := range autoImportNoisyMessageSnippets {
+		if strings.Contains(lower, snippet) {
+			return true
+		}
+	}
+	if strings.Count(text, "<") >= 3 && strings.Count(text, ">") >= 3 {
+		return true
+	}
+	return false
+}
+
 var (
 	englishTokenPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9._/-]*`)
 	urlPattern          = regexp.MustCompile(`(?i)^(https?://|www\.)`)
 	pathPattern         = regexp.MustCompile(`^([~./]|[A-Za-z]:\\)`)
 	autoImportJiebaOnce sync.Once
 	autoImportJieba     *gojieba.Jieba
+	englishDictOnce     sync.Once
+	englishDictWords    map[string]struct{}
 )
 
 var englishStopWords = map[string]struct{}{
@@ -735,42 +750,204 @@ var chineseNoiseRunes = map[rune]struct{}{
 	'一': {}, '下': {}, '吗': {}, '吧': {}, '啊': {},
 }
 
+type autoImportToken struct {
+	Term           string
+	NormalizedTerm string
+	Fragment       bool
+}
+
+type autoImportDocument struct {
+	Platform        string
+	Text            string
+	TokenFreq       map[string]int
+	TokenTerms      map[string]string
+	TokenStandalone map[string]bool
+	Length          int
+}
+
+type autoImportTermDocStat struct {
+	TF     int
+	DocLen int
+}
+
+type autoImportTermStat struct {
+	term       string
+	normalized string
+	platform   string
+	tf         int
+	hits       int
+	standalone int
+	fragments  int
+	score      float64
+	docs       []autoImportTermDocStat
+	examples   []string
+	exampleSet map[string]struct{}
+	metrics    autoImportTermMetrics
+}
+
+type autoImportTermMetrics struct {
+	length         int
+	separatorCount int
+	hasUpper       bool
+	hasLower       bool
+	hasDigit       bool
+	hasSeparator   bool
+	chinese        bool
+	english        bool
+	camelCase      bool
+	plainEnglish   bool
+	phrase         bool
+	protected      bool
+	reject         bool
+}
+
+type autoImportPhrasePattern struct {
+	Pattern string
+	Token   string
+	Term    string
+}
+
+var autoImportCanonicalTerms = map[string]string{
+	"ai": "AI", "api": "API", "bm25": "BM25", "rag": "RAG", "pitr": "PITR", "br": "BR",
+	"tidb": "TiDB", "mysql": "MySQL", "redis": "Redis", "golang": "Golang", "go": "Go",
+	"tiup": "TiUP", "e2e": "E2E", "http": "HTTP", "https": "HTTPS", "ssh": "SSH",
+	"oauth": "OAuth", "github": "GitHub", "codex": "Codex", "claude": "Claude", "wails": "Wails",
+	"react": "React", "typescript": "TypeScript",
+}
+
+var autoImportProtectedTerms = map[string]struct{}{
+	"bm25": {}, "rag": {}, "pitr": {}, "br": {}, "tidb": {}, "tiup": {},
+}
+
+var autoImportDomainStopWords = map[string]struct{}{
+	"怎么": {}, "如何": {}, "帮我": {}, "请问": {}, "一下": {}, "问题": {}, "方案": {}, "分析": {},
+	"解释": {}, "处理": {}, "生成": {}, "使用": {}, "工具": {}, "实现": {}, "支持": {}, "看看": {},
+	"自动": {}, "导入": {}, "预览": {}, "结果": {}, "输出": {}, "扫描": {}, "继续": {}, "这里": {},
+	"这个": {}, "可以": {}, "如果": {}, "什么": {}, "文档": {}, "测试": {}, "确认": {}, "为什么": {},
+	"直接": {}, "没有": {}, "任务": {}, "是否": {}, "代码": {}, "当前": {}, "已经": {}, "以及": {},
+	"修改": {}, "开始": {}, "不是": {}, "然后": {}, "通过": {}, "需要": {}, "完成": {}, "执行": {},
+	"前端": {}, "里面": {}, "但是": {}, "或者": {}, "命令": {}, "本地": {}, "状态": {}, "启动": {},
+	"项目": {}, "进行": {}, "页面": {}, "增加": {}, "接口": {}, "文件": {}, "同时": {}, "脚本": {},
+	"修复": {}, "流程": {}, "配置": {}, "失败": {}, "时候": {}, "有没有": {}, "信息": {}, "按照": {},
+	"更新": {}, "还有": {}, "觉得": {}, "自己": {}, "这些": {}, "所有": {}, "两个": {},
+	"you": {}, "your": {}, "them": {}, "can": {}, "not": {}, "open": {}, "read": {}, "review": {},
+	"check": {}, "run": {}, "main": {}, "flow": {}, "step": {}, "current": {}, "context": {},
+	"command": {}, "commands": {}, "instructions": {}, "instruction": {}, "environment": {}, "environment_context": {},
+	"current_date": {}, "currentdate": {}, "path": {}, "paths": {}, "name": {}, "users": {}, "user": {},
+	"email": {}, "mailbox": {}, "system": {}, "role": {}, "status": {}, "date": {}, "description": {},
+	"analysis": {}, "workflow": {}, "scripts": {}, "script": {}, "host": {}, "repo": {}, "branch": {},
+	"merge": {}, "install": {}, "failed": {}, "backup": {}, "gate": {}, "shell": {}, "root": {},
+	"home": {}, "bin": {}, "pkg": {}, "div": {}, "docs": {}, "doc": {}, "load": {}, "visible": {},
+	"exist": {}, "continue": {}, "com": {}, "penwyp": {}, "skill": {},
+	"skills": {}, "skill.md": {}, "debug": {}, "prompt": {}, "mail": {}, "log": {}, "logs": {},
+	"dashboard": {}, "timezone": {}, "worktree": {}, "tem": {},
+	"ads": {}, "ace": {}, "obs": {}, "tolink": {}, "caveat": {}, "unless": {}, "instead": {}, "get": {},
+	"reviews": {}, "file": {}, "files": {}, "add": {}, "any": {}, "how": {},
+	"go": {}, "api": {}, "http": {}, "https": {}, "ssh": {}, "oauth": {}, "github": {}, "openai": {},
+	"codex": {}, "claude": {}, "e2e": {}, "git": {},
+	"tools": {}, "config": {}, "monitoring": {}, "generated": {}, "existing": {}, "backend": {},
+	"frontend": {}, "coding": {}, "changes": {}, "available": {}, "specific": {}, "target": {},
+	"creator": {}, "runtime": {}, "service": {}, "auth": {}, "entry": {}, "group": {}, "page": {},
+	"language": {}, "field": {}, "needed": {}, "reference": {}, "references": {},
+	"default": {}, "version": {}, "core": {}, "base": {}, "app": {}, "nodes": {}, "dir": {},
+	"url": {}, "cmd": {}, "conf": {}, "yaml": {}, "best": {},
+	"first": {}, "full": {}, "all": {}, "new": {}, "generated.": {},
+	"data-type": {}, "fill_about_you": {}, "fetch_otp": {}, "birthday_hidden": {}, "day_visible": {},
+	"month_visible": {}, "year_visible": {}, "about-you": {}, "local-command-stdout": {},
+	"tasks": {}, "tokens": {}, "box": {}, "otp": {}, "liu": {}, "yifei": {},
+}
+
+var autoImportNoisyMessageSnippets = []string{
+	"<environment_context>", "<local-command-caveat>", "<command-name>", "<command-message>",
+	"<command-args>", "<turn_aborted>", "# agents.md instructions", "documentation & housekeeping",
+	"would you like to run the following command?", "the user interrupted the previous turn on purpose",
+}
+
+var autoImportPhrasePatterns = []autoImportPhrasePattern{
+	{Pattern: "claude code", Token: "claude_code", Term: "Claude_Code"},
+	{Pattern: "chatgpt pro", Token: "chatgpt_pro", Term: "ChatGPT_Pro"},
+	{Pattern: "tidb br", Token: "tidb_br", Term: "TiDB_BR"},
+	{Pattern: "log backup", Token: "log_backup", Term: "log_backup"},
+	{Pattern: "keyword extraction", Token: "keyword_extraction", Term: "keyword_extraction"},
+}
+
 func extractAutoImportCandidates(messages []autoImportMessage) []AutoImportCandidate {
-	type candidateStat struct {
-		term       string
-		platform   string
-		hits       int
-		examples   []string
-		exampleSet map[string]struct{}
+	documents := buildAutoImportDocuments(messages)
+	if len(documents) == 0 {
+		return nil
 	}
-	stats := make(map[string]*candidateStat)
+	stats, avgDocLen := collectAutoImportTermStats(documents)
+	candidates := scoreAutoImportTermStats(stats, len(documents), avgDocLen)
+	return limitAutoImportCandidates(candidates)
+}
 
+func buildAutoImportDocuments(messages []autoImportMessage) []autoImportDocument {
+	documents := make([]autoImportDocument, 0, len(messages))
 	for _, message := range messages {
-		seenInMessage := make(map[string]struct{})
-		for _, token := range extractTokensFromMessage(message.Text) {
-			key := normalizeDictionaryTermKey(token)
-			if _, ok := seenInMessage[key]; ok {
-				continue
+		tokens := collectAutoImportTokens(message.Text)
+		if len(tokens) == 0 {
+			continue
+		}
+		document := autoImportDocument{
+			Platform:        message.Platform,
+			Text:            message.Text,
+			TokenFreq:       make(map[string]int, len(tokens)),
+			TokenTerms:      make(map[string]string, len(tokens)),
+			TokenStandalone: make(map[string]bool, len(tokens)),
+		}
+		for _, token := range tokens {
+			document.TokenFreq[token.NormalizedTerm]++
+			document.Length++
+			if !token.Fragment {
+				document.TokenStandalone[token.NormalizedTerm] = true
 			}
-			seenInMessage[key] = struct{}{}
+			if preferAutoImportTerm(token.Term, document.TokenTerms[token.NormalizedTerm]) {
+				document.TokenTerms[token.NormalizedTerm] = token.Term
+			}
+		}
+		documents = append(documents, document)
+	}
+	return documents
+}
 
-			stat, ok := stats[key]
+func collectAutoImportTermStats(documents []autoImportDocument) (map[string]*autoImportTermStat, float64) {
+	stats := make(map[string]*autoImportTermStat)
+	totalDocLen := 0
+	for _, document := range documents {
+		totalDocLen += document.Length
+		example := OneLine(document.Text, 96)
+		for normalized, tf := range document.TokenFreq {
+			stat, ok := stats[normalized]
 			if !ok {
-				stat = &candidateStat{
-					term:       token,
-					platform:   message.Platform,
+				term := document.TokenTerms[normalized]
+				stat = &autoImportTermStat{
+					term:       term,
+					normalized: normalized,
+					platform:   document.Platform,
 					exampleSet: make(map[string]struct{}, autoImportMaxExamplesPerHit),
+					metrics:    classifyCandidateTerm(term),
 				}
-				stats[key] = stat
+				stats[normalized] = stat
 			}
+			term := document.TokenTerms[normalized]
+			if preferAutoImportTerm(term, stat.term) {
+				stat.term = term
+				stat.metrics = classifyCandidateTerm(term)
+			}
+			stat.tf += tf
 			stat.hits++
-			if preferAutoImportTerm(token, stat.term) {
-				stat.term = token
+			if document.TokenStandalone[normalized] {
+				stat.standalone++
+			} else {
+				stat.fragments++
 			}
-			if shouldReplaceAutoImportPlatform(message.Platform, stat.platform, stat.hits) {
-				stat.platform = message.Platform
+			stat.docs = append(stat.docs, autoImportTermDocStat{
+				TF:     tf,
+				DocLen: maxInt(document.Length, 1),
+			})
+			if shouldReplaceAutoImportPlatform(document.Platform, stat.platform, stat.hits) {
+				stat.platform = document.Platform
 			}
-			example := OneLine(message.Text, 96)
 			if len(stat.examples) < autoImportMaxExamplesPerHit {
 				if _, ok := stat.exampleSet[example]; !ok {
 					stat.examples = append(stat.examples, example)
@@ -779,63 +956,158 @@ func extractAutoImportCandidates(messages []autoImportMessage) []AutoImportCandi
 			}
 		}
 	}
+	avgDocLen := 1.0
+	if len(documents) > 0 && totalDocLen > 0 {
+		avgDocLen = float64(totalDocLen) / float64(len(documents))
+	}
+	return stats, avgDocLen
+}
 
-	candidates := make([]AutoImportCandidate, 0, len(stats))
+func scoreAutoImportTermStats(stats map[string]*autoImportTermStat, totalDocs int, avgDocLen float64) []AutoImportCandidate {
+	if len(stats) == 0 {
+		return nil
+	}
+	type scoredCandidate struct {
+		candidate AutoImportCandidate
+		score     float64
+	}
+	scored := make([]scoredCandidate, 0, len(stats))
 	for _, stat := range stats {
-		candidates = append(candidates, AutoImportCandidate{
-			Term:           stat.term,
-			NormalizedTerm: normalizeDictionaryTermKey(stat.term),
-			Platform:       stat.platform,
-			Hits:           stat.hits,
-			Examples:       stat.examples,
+		score, ok := scoreAutoImportTermStat(stat, totalDocs, avgDocLen)
+		if !ok {
+			continue
+		}
+		stat.score = score
+		scored = append(scored, scoredCandidate{
+			score: score,
+			candidate: AutoImportCandidate{
+				Term:           stat.term,
+				NormalizedTerm: stat.normalized,
+				Platform:       stat.platform,
+				Hits:           stat.hits,
+				Examples:       stat.examples,
+			},
 		})
 	}
-
-	slices.SortFunc(candidates, func(left, right AutoImportCandidate) int {
+	slices.SortFunc(scored, func(left, right scoredCandidate) int {
 		switch {
-		case left.Hits != right.Hits:
-			return right.Hits - left.Hits
-		case left.Platform != right.Platform:
-			return strings.Compare(left.Platform, right.Platform)
+		case left.score != right.score:
+			if right.score > left.score {
+				return 1
+			}
+			return -1
+		case left.candidate.Hits != right.candidate.Hits:
+			return right.candidate.Hits - left.candidate.Hits
+		case left.candidate.Platform != right.candidate.Platform:
+			return strings.Compare(left.candidate.Platform, right.candidate.Platform)
 		default:
-			return strings.Compare(left.NormalizedTerm, right.NormalizedTerm)
+			return strings.Compare(left.candidate.NormalizedTerm, right.candidate.NormalizedTerm)
 		}
 	})
+	candidates := make([]AutoImportCandidate, 0, len(scored))
+	for _, item := range scored {
+		candidates = append(candidates, item.candidate)
+	}
 	return candidates
 }
 
 func extractTokensFromMessage(text string) []string {
-	tokens := make([]string, 0, 24)
 	seen := make(map[string]struct{}, 32)
-	appendToken := func(token string) {
-		token = strings.TrimSpace(token)
-		if token == "" {
+	tokens := make([]string, 0, 24)
+	for _, token := range collectAutoImportTokens(text) {
+		if _, ok := seen[token.NormalizedTerm]; ok {
+			continue
+		}
+		seen[token.NormalizedTerm] = struct{}{}
+		tokens = append(tokens, token.Term)
+	}
+	return tokens
+}
+
+func collectAutoImportTokens(text string) []autoImportToken {
+	tokens := make([]autoImportToken, 0, 32)
+	appendToken := func(term string, fragment bool) {
+		token, ok := normalizeAutoImportToken(term)
+		if !ok {
 			return
 		}
-		normalized := normalizeDictionaryTermKey(token)
-		if !isUsefulCandidateToken(token, normalized) {
-			return
-		}
-		if _, ok := seen[normalized]; ok {
-			return
-		}
-		seen[normalized] = struct{}{}
+		token.Fragment = fragment
 		tokens = append(tokens, token)
 	}
 
 	for _, match := range englishTokenPattern.FindAllString(text, -1) {
-		appendToken(match)
+		appendToken(match, false)
 		for _, sub := range splitCamelCase(match) {
-			appendToken(sub)
+			appendToken(sub, true)
 		}
 		for _, sub := range splitCompositeToken(match) {
-			appendToken(sub)
+			appendToken(sub, true)
 		}
 	}
 	for _, match := range extractChineseCandidates(text) {
-		appendToken(match)
+		appendToken(match, false)
+	}
+	for _, phrase := range extractPhraseCandidates(text) {
+		appendToken(phrase, false)
 	}
 	return tokens
+}
+
+func extractPhraseCandidates(text string) []string {
+	normalizedText := normalizePhraseSourceText(text)
+	if normalizedText == "" {
+		return nil
+	}
+	results := make([]string, 0, 4)
+	padded := " " + normalizedText + " "
+	for _, pattern := range autoImportPhrasePatterns {
+		needle := " " + pattern.Pattern + " "
+		count := strings.Count(padded, needle)
+		for i := 0; i < count; i++ {
+			results = append(results, pattern.Term)
+		}
+	}
+	return results
+}
+
+func normalizePhraseSourceText(text string) string {
+	builder := strings.Builder{}
+	builder.Grow(len(text))
+	lastSpace := true
+	for _, r := range strings.ToLower(text) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			builder.WriteRune(r)
+			lastSpace = false
+		default:
+			if !lastSpace {
+				builder.WriteByte(' ')
+				lastSpace = true
+			}
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func normalizeAutoImportToken(term string) (autoImportToken, bool) {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return autoImportToken{}, false
+	}
+	normalized := normalizeDictionaryTermKey(term)
+	if canonical, ok := autoImportCanonicalTerms[normalized]; ok {
+		term = canonical
+	}
+	if !isUsefulCandidateToken(term, normalized) {
+		return autoImportToken{}, false
+	}
+	if isStopWordToken(term, normalized) {
+		return autoImportToken{}, false
+	}
+	return autoImportToken{
+		Term:           term,
+		NormalizedTerm: normalized,
+	}, true
 }
 
 func splitCompositeToken(token string) []string {
@@ -860,6 +1132,8 @@ func preferAutoImportTerm(next, current string) bool {
 	case strings.ContainsAny(next, "_-./") && !strings.ContainsAny(current, "_-./"):
 		return true
 	case hasUpperLetter(next) && !hasUpperLetter(current):
+		return true
+	case isProtectedTerm(normalizeDictionaryTermKey(next)) && !isProtectedTerm(normalizeDictionaryTermKey(current)):
 		return true
 	case len([]rune(next)) > len([]rune(current)):
 		return true
@@ -966,13 +1240,13 @@ func isUsefulCandidateToken(original, normalized string) bool {
 	if normalized == "" {
 		return false
 	}
-	if _, ok := englishStopWords[normalized]; ok {
-		return false
-	}
 	if urlPattern.MatchString(normalized) || pathPattern.MatchString(original) {
 		return false
 	}
 	if strings.Contains(original, "--") {
+		return false
+	}
+	if strings.Contains(original, ".") && !strings.HasSuffix(strings.ToLower(original), ".md") {
 		return false
 	}
 	if len([]rune(original)) > 48 {
@@ -1009,134 +1283,128 @@ func isUsefulCandidateToken(original, normalized string) bool {
 	}
 	if hasChinese {
 		length := len([]rune(original))
-		return length >= 2 && length <= 12
+		return length >= 2 && length <= 16
 	}
-	if asciiLetterCount < 2 && !hasUpper && !hasSeparator {
+	if asciiLetterCount < 2 && !hasUpper && !hasSeparator && !isProtectedTerm(normalized) {
 		return false
 	}
-	if isPlainEnglishWord(original) && len([]rune(original)) <= 3 {
+	if isPlainEnglishWord(normalized) && len([]rune(normalized)) <= 2 && !isProtectedTerm(normalized) {
 		return false
 	}
 	return true
 }
 
-func rankAutoImportCandidates(candidates []AutoImportCandidate, totalMessages int) []AutoImportCandidate {
-	if len(candidates) == 0 {
-		return nil
+func isStopWordToken(term, normalized string) bool {
+	if isProtectedTerm(normalized) {
+		return false
 	}
-	totalDocs := maxInt(totalMessages, 1)
-	type scoredCandidate struct {
-		candidate AutoImportCandidate
-		score     float64
+	if isTemplateLikeToken(term) {
+		return true
 	}
-	scored := make([]scoredCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		score, ok := scoreAutoImportCandidate(candidate, totalDocs)
-		if !ok {
-			continue
-		}
-		scored = append(scored, scoredCandidate{
-			candidate: candidate,
-			score:     score,
-		})
+	if isDictionaryEnglishWord(term, normalized) {
+		return true
 	}
-	slices.SortFunc(scored, func(left, right scoredCandidate) int {
-		switch {
-		case left.score != right.score:
-			if right.score > left.score {
-				return 1
-			}
-			return -1
-		case left.candidate.Hits != right.candidate.Hits:
-			return right.candidate.Hits - left.candidate.Hits
-		case left.candidate.Platform != right.candidate.Platform:
-			return strings.Compare(left.candidate.Platform, right.candidate.Platform)
-		default:
-			return strings.Compare(left.candidate.NormalizedTerm, right.candidate.NormalizedTerm)
-		}
-	})
-	limit := minInt(len(scored), autoImportMaxFinalCandidates)
-	ranked := make([]AutoImportCandidate, 0, limit)
-	for _, item := range scored[:limit] {
-		ranked = append(ranked, item.candidate)
+	if _, ok := englishStopWords[normalized]; ok {
+		return true
 	}
-	return ranked
+	if _, ok := autoImportDomainStopWords[normalized]; ok {
+		return true
+	}
+	if isNoisyChineseCandidate(term) {
+		return true
+	}
+	return false
 }
 
-func scoreAutoImportCandidate(candidate AutoImportCandidate, totalDocs int) (float64, bool) {
-	metrics := classifyCandidateTerm(candidate.Term)
+func scoreAutoImportTermStat(stat *autoImportTermStat, totalDocs int, avgDocLen float64) (float64, bool) {
+	metrics := stat.metrics
 	if metrics.reject {
 		return 0, false
 	}
-	if _, ok := englishStopWords[candidate.NormalizedTerm]; ok {
-		return 0, false
-	}
-	if metrics.chinese && isNoisyChineseCandidate(candidate.Term) {
-		return 0, false
-	}
-	if metrics.plainEnglish && candidate.Hits < 2 {
-		return 0, false
-	}
-	if metrics.chinese && metrics.length > 6 && candidate.Hits < 2 {
-		return 0, false
-	}
-
-	df := minInt(candidate.Hits, totalDocs)
-	idf := math.Log(1 + (float64(totalDocs-df)+0.5)/(float64(df)+0.5))
-	score := float64(candidate.Hits) * idf
-
-	switch {
-	case metrics.camelCase:
-		score *= 1.35
-	case metrics.hasUpper:
-		score *= 1.15
-	}
-	if metrics.hasSeparator {
-		score *= 1.2
-	}
-	if metrics.hasDigit && (metrics.english || metrics.chinese) {
-		score *= 1.1
-	}
 	if metrics.chinese {
-		switch {
-		case metrics.length <= 4:
-			score *= 1.2
-		case metrics.length <= 6:
-			score *= 1.05
-		default:
-			score *= 0.8
-		}
+		return 0, false
 	}
-	if metrics.plainEnglish {
-		score *= 0.6
+	if stat.standalone == 0 && stat.fragments > 0 {
+		return 0, false
 	}
-	if metrics.length >= 20 {
-		score *= 0.6
+	if metrics.plainEnglish && stat.hits == 1 && stat.tf == 1 && !metrics.protected {
+		return 0, false
 	}
-	if metrics.separatorCount >= 3 {
-		score *= 0.7
+
+	df := minInt(stat.hits, maxInt(totalDocs, 1))
+	idf := math.Log(1 + float64(totalDocs+1)/float64(df+1))
+	tfidf := float64(stat.tf) * idf
+
+	bm25 := 0.0
+	const (
+		k1 = 1.5
+		b  = 0.75
+	)
+	if avgDocLen <= 0 {
+		avgDocLen = 1
+	}
+	for _, doc := range stat.docs {
+		tf := float64(doc.TF)
+		docLen := float64(maxInt(doc.DocLen, 1))
+		denominator := tf + k1*(1-b+b*docLen/avgDocLen)
+		bm25 += idf * (tf * (k1 + 1) / denominator)
+	}
+
+	score := tfidf*0.65 + bm25*0.35
+	score *= autoImportDomainBoost(stat)
+	if score <= 0 {
+		return 0, false
 	}
 	return score, true
 }
 
-type autoImportTermMetrics struct {
-	length         int
-	separatorCount int
-	hasUpper       bool
-	hasLower       bool
-	hasDigit       bool
-	hasSeparator   bool
-	chinese        bool
-	english        bool
-	camelCase      bool
-	plainEnglish   bool
-	reject         bool
+func autoImportDomainBoost(stat *autoImportTermStat) float64 {
+	metrics := stat.metrics
+	boost := 1.0
+	if metrics.protected {
+		boost *= 1.35
+	}
+	if metrics.phrase {
+		boost *= 1.3
+	}
+	if metrics.camelCase {
+		boost *= 1.25
+	} else if metrics.hasUpper {
+		boost *= 1.1
+	}
+	if metrics.hasSeparator {
+		boost *= 1.2
+	}
+	if metrics.hasDigit && (metrics.english || metrics.chinese) {
+		boost *= 1.08
+	}
+	if metrics.chinese {
+		switch {
+		case metrics.length <= 4:
+			boost *= 1.12
+		case metrics.length >= 10:
+			boost *= 0.82
+		}
+	}
+	if metrics.plainEnglish {
+		boost *= 0.62
+	}
+	if metrics.length >= 24 {
+		boost *= 0.72
+	}
+	if stat.hits >= 3 {
+		boost *= 1.08
+	}
+	return boost
 }
 
 func classifyCandidateTerm(term string) autoImportTermMetrics {
 	runes := []rune(term)
+	normalized := normalizeDictionaryTermKey(term)
 	metrics := autoImportTermMetrics{
-		length: len(runes),
+		length:    len(runes),
+		phrase:    strings.ContainsAny(term, "_-./"),
+		protected: isProtectedTerm(normalized),
 	}
 	for _, r := range runes {
 		switch {
@@ -1163,13 +1431,13 @@ func classifyCandidateTerm(term string) autoImportTermMetrics {
 	if metrics.separatorCount >= 4 {
 		metrics.reject = true
 	}
-	if metrics.length > 32 {
+	if metrics.length > 40 {
 		metrics.reject = true
 	}
 	if metrics.plainEnglish && metrics.length > 24 {
 		metrics.reject = true
 	}
-	if metrics.hasDigit && !metrics.english && !metrics.chinese {
+	if metrics.hasDigit && !metrics.english && !metrics.chinese && !metrics.hasSeparator {
 		metrics.reject = true
 	}
 	return metrics
@@ -1187,7 +1455,103 @@ func isPlainEnglishWord(term string) bool {
 	return true
 }
 
+func isProtectedTerm(normalized string) bool {
+	_, ok := autoImportProtectedTerms[normalized]
+	return ok
+}
+
+func isTemplateLikeToken(term string) bool {
+	runes := []rune(term)
+	if len(runes) < 3 {
+		return false
+	}
+	hasLetter := false
+	hasLower := false
+	hasUpper := false
+	for _, r := range runes {
+		switch {
+		case unicode.IsLower(r):
+			hasLetter = true
+			hasLower = true
+		case unicode.IsUpper(r):
+			hasLetter = true
+			hasUpper = true
+		case unicode.IsDigit(r):
+		case r == '_' || r == '-':
+		default:
+			return false
+		}
+	}
+	if !hasLetter {
+		return false
+	}
+	return hasUpper && !hasLower
+}
+
+func isDictionaryEnglishWord(term, normalized string) bool {
+	if normalized == "" || isProtectedTerm(normalized) {
+		return false
+	}
+	for _, r := range normalized {
+		if r > unicode.MaxASCII || !unicode.IsLetter(r) {
+			return false
+		}
+	}
+	if strings.ContainsAny(term, "_-./") || hasUpperLetter(term) && strings.IndexFunc(term, unicode.IsUpper) > 0 {
+		return false
+	}
+	if len(normalized) <= 2 {
+		return false
+	}
+	words := loadEnglishDictionaryWords()
+	if len(words) == 0 {
+		return false
+	}
+	_, ok := words[normalized]
+	return ok
+}
+
+func loadEnglishDictionaryWords() map[string]struct{} {
+	englishDictOnce.Do(func() {
+		englishDictWords = make(map[string]struct{}, 65536)
+		for _, path := range []string{"/usr/share/dict/words", "/usr/share/dict/web2"} {
+			file, err := os.Open(path)
+			if err != nil {
+				continue
+			}
+			scanner := bufio.NewScanner(file)
+			scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+			for scanner.Scan() {
+				word := strings.TrimSpace(scanner.Text())
+				if word == "" {
+					continue
+				}
+				lower := strings.ToLower(word)
+				valid := true
+				for _, r := range lower {
+					if r > unicode.MaxASCII || !unicode.IsLetter(r) {
+						valid = false
+						break
+					}
+				}
+				if valid && len(lower) >= 3 {
+					englishDictWords[lower] = struct{}{}
+				}
+			}
+			_ = file.Close()
+			if len(englishDictWords) > 0 {
+				return
+			}
+		}
+	})
+	return englishDictWords
+}
+
 func isNoisyChineseCandidate(term string) bool {
+	normalized := normalizeDictionaryTermKey(term)
+	if _, ok := autoImportDomainStopWords[normalized]; ok {
+		return true
+	}
 	for _, fragment := range chineseNoiseFragments {
 		if strings.Contains(term, fragment) {
 			return true
@@ -1203,6 +1567,9 @@ func isNoisyChineseCandidate(term string) bool {
 			stopCount++
 		}
 	}
+	if len(runes) <= 2 && stopCount > 0 {
+		return true
+	}
 	if _, ok := chineseNoiseRunes[runes[0]]; ok {
 		return true
 	}
@@ -1210,6 +1577,13 @@ func isNoisyChineseCandidate(term string) bool {
 		return true
 	}
 	return stopCount >= 2
+}
+
+func limitAutoImportCandidates(candidates []AutoImportCandidate) []AutoImportCandidate {
+	if len(candidates) <= autoImportMaxFinalCandidates {
+		return candidates
+	}
+	return candidates[:autoImportMaxFinalCandidates]
 }
 
 func minInt(left, right int) int {
