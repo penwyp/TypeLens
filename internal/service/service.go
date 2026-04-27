@@ -54,6 +54,8 @@ type ExportRequest struct {
 type Service struct {
 	config            Config
 	autoImportMu      sync.Mutex
+	autoImportStateMu sync.Mutex
+	autoImportRetry   *time.Timer
 	autoImportRunning bool
 }
 

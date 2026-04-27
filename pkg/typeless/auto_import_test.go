@@ -84,6 +84,30 @@ func TestMergePendingCandidates(t *testing.T) {
 	}
 }
 
+func TestFilterVisiblePendingWordsHidesSyncedAndFailed(t *testing.T) {
+	words := []PendingDictionaryWord{
+		{Term: "Pending", Status: AutoImportStatusPending},
+		{Term: "Syncing", Status: AutoImportStatusSyncing},
+		{Term: "Failed", Status: AutoImportStatusFailed},
+		{Term: "Synced", Status: AutoImportStatusSynced},
+	}
+
+	visible := FilterVisiblePendingWords(words)
+	if len(visible) != 2 {
+		t.Fatalf("FilterVisiblePendingWords() len = %d, want 2: %#v", len(visible), visible)
+	}
+	for _, want := range []string{"Pending", "Syncing"} {
+		if !slices.ContainsFunc(visible, func(word PendingDictionaryWord) bool { return word.Term == want }) {
+			t.Fatalf("FilterVisiblePendingWords() missing %q: %#v", want, visible)
+		}
+	}
+	for _, rejected := range []string{"Failed", "Synced"} {
+		if slices.ContainsFunc(visible, func(word PendingDictionaryWord) bool { return word.Term == rejected }) {
+			t.Fatalf("FilterVisiblePendingWords() unexpectedly contains %q: %#v", rejected, visible)
+		}
+	}
+}
+
 func TestExtractAutoImportCandidatesDropsPlainEnglishNoise(t *testing.T) {
 	candidates := extractAutoImportCandidates([]autoImportMessage{
 		{Platform: AutoImportPlatformCodex, Text: "please update the response and create the build result"},

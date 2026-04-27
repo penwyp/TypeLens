@@ -1648,7 +1648,11 @@ func SavePendingDictionaryWords(path string, words []PendingDictionaryWord) erro
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	tempPath := path + ".tmp"
+	if err := os.WriteFile(tempPath, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
 }
 
 func PendingDictionaryTermSet(words []PendingDictionaryWord) map[string]struct{} {
@@ -1732,10 +1736,10 @@ func UpdatePendingDictionaryWordStatus(words []PendingDictionaryWord, term, stat
 func FilterVisiblePendingWords(words []PendingDictionaryWord) []PendingDictionaryWord {
 	filtered := make([]PendingDictionaryWord, 0, len(words))
 	for _, word := range words {
-		if word.Status == AutoImportStatusSynced {
-			continue
+		switch word.Status {
+		case AutoImportStatusPending, AutoImportStatusSyncing:
+			filtered = append(filtered, word)
 		}
-		filtered = append(filtered, word)
 	}
 	return filtered
 }

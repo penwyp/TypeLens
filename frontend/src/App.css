@@ -300,6 +300,11 @@ button:disabled {
   gap: 7px;
 }
 
+.word-grid-sentinel {
+  grid-column: 1 / -1;
+  min-height: 1px;
+}
+
 .word-chip {
   position: relative;
   min-width: 0;
@@ -340,34 +345,6 @@ button:disabled {
   min-width: 0;
   display: grid;
   gap: 4px;
-}
-
-.pending-chip {
-  border-color: rgba(0, 112, 186, 0.28);
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.status-badge {
-  width: fit-content;
-  min-height: 20px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: rgba(7, 21, 44, 0.08);
-  color: rgba(7, 21, 44, 0.68);
-  font-size: 11px;
-}
-
-.status-syncing,
-.status-pending {
-  background: rgba(0, 112, 186, 0.12);
-  color: rgba(0, 48, 135, 0.84);
-}
-
-.status-failed {
-  background: rgba(17, 24, 39, 0.16);
-  color: rgba(17, 24, 39, 0.84);
 }
 
 .word-actions {

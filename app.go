@@ -154,7 +154,7 @@ func (a *App) ConfirmAutoImport(request service.AutoImportConfirmRequest) (servi
 }
 
 func (a *App) ListPendingImportedWords() ([]typeless.PendingDictionaryWord, error) {
-	return a.service.ListPendingAutoImportWords()
+	return a.service.ListPendingAutoImportWords(a.ctx, newAutoImportEventWriter(a.ctx))
 }
 
 type eventWriter struct {
@@ -209,7 +209,7 @@ func (w *autoImportEventWriter) Write(p []byte) (int, error) {
 			continue
 		}
 		runtime.EventsEmit(w.ctx, "typelens:auto-import-log", line)
-		if line == "后台自动导入同步已完成。" || line == "没有待同步词条。" {
+		if line == "后台自动导入同步已完成。" || line == "没有待同步词条。" || line == "当前没有可同步词条。" {
 			completed = true
 		}
 	}

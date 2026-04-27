@@ -1,4 +1,4 @@
-import { FormEvent, UIEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AddDictionaryTerm,
   CopyText,
@@ -30,9 +30,7 @@ type WordMenu = {
   entry: DictionaryEntry;
 } | null;
 
-type DictionaryEntry =
-  | { kind: 'remote'; key: string; word: typeless.DictionaryWord; term: string }
-  | { kind: 'pending'; key: string; word: typeless.PendingDictionaryWord; term: string };
+type DictionaryEntry = { key: string; word: typeless.DictionaryWord; term: string };
 
 const WORD_PAGE_SIZE = 80;
 
@@ -52,8 +50,8 @@ export function DictionaryView({
   const [wordMenu, setWordMenu] = useState<WordMenu>(null);
 
   const [words, setWords] = useState<typeless.DictionaryWord[]>([]);
-  const [pendingWords, setPendingWords] = useState<typeless.PendingDictionaryWord[]>([]);
   const [visibleWordCount, setVisibleWordCount] = useState(WORD_PAGE_SIZE);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const [newTerm, setNewTerm] = useState('');
   const [importPath, setImportPath] = useState('');
   const [importConcurrency, setImportConcurrency] = useState(10);
@@ -110,7 +108,10 @@ export function DictionaryView({
 
   useEffect(() => {
     return EventsOn('typelens:auto-import-finished', () => {
-      void refreshAll();
+      void refreshAll({
+        resetVisibleCount: false,
+        silentError: true,
+      });
     });
   }, []);
 
@@ -125,24 +126,39 @@ export function DictionaryView({
   }, []);
 
   const entries = useMemo<DictionaryEntry[]>(() => {
-    const remoteEntries: DictionaryEntry[] = words.map((word) => ({
-      kind: 'remote',
+    return words.map((word) => ({
       key: `remote-${word.user_dictionary_id}`,
       word,
       term: word.term,
-    }));
-    const pendingEntries: DictionaryEntry[] = pendingWords.map((word) => ({
-      kind: 'pending',
-      key: `pending-${normalizeTerm(word.term)}`,
-      word,
-      term: word.term,
-    }));
-    return [...pendingEntries, ...remoteEntries].sort((left, right) => left.term.localeCompare(right.term, 'zh-CN'));
-  }, [pendingWords, words]);
+    })).sort((left, right) => left.term.localeCompare(right.term, 'zh-CN'));
+  }, [words]);
 
   useEffect(() => {
     onCountChange(entries.length);
   }, [entries.length, onCountChange]);
+
+  const loadMoreWords = useCallback(() => {
+    setVisibleWordCount((count) => Math.min(entries.length, count + WORD_PAGE_SIZE));
+  }, [entries.length]);
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    const root = sentinel?.parentElement;
+    if (!sentinel || !root || visibleWordCount >= entries.length) {
+      return;
+    }
+    const observer = new IntersectionObserver((items) => {
+      if (items.some((item) => item.isIntersecting)) {
+        loadMoreWords();
+      }
+    }, {
+      root,
+      rootMargin: '240px 0px',
+      threshold: 0,
+    });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [entries.length, loadMoreWords, visibleWordCount]);
 
   async function bootstrap() {
     try {
@@ -155,11 +171,11 @@ export function DictionaryView({
 
   async function refreshAll(options: { resetVisibleCount?: boolean; silentError?: boolean } = {}) {
     try {
-      const [nextWords, nextPending] = await Promise.all([
+      const [nextWords] = await Promise.all([
         ListDictionaryWords(),
         ListPendingImportedWords(),
       ]);
-      applyDictionaryState(nextWords, nextPending);
+      applyDictionaryState(nextWords);
       if (options.resetVisibleCount ?? true) {
         setVisibleWordCount(WORD_PAGE_SIZE);
       }
@@ -269,10 +285,6 @@ export function DictionaryView({
   }
 
   async function deleteWord(entry: DictionaryEntry) {
-    if (entry.kind !== 'remote') {
-      onNotice({ kind: 'info', text: '待同步词条暂不支持删除。' });
-      return;
-    }
     const previousWords = words;
     try {
       setWords((current) => current.filter((item) => item.user_dictionary_id !== entry.word.user_dictionary_id));
@@ -334,14 +346,6 @@ export function DictionaryView({
     }
   }
 
-  function handleDictionaryScroll(event: UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget;
-    if (visibleWordCount >= entries.length || element.scrollTop + element.clientHeight < element.scrollHeight - 80) {
-      return;
-    }
-    setVisibleWordCount((count) => Math.min(entries.length, count + WORD_PAGE_SIZE));
-  }
-
   const importFileLabel = summarizePath(importPath, '选择文件');
   const resetFileLabel = summarizePath(resetPath, '使用内置词表');
   const exportFileLabel = summarizePath(exportPath, '选择保存路径');
@@ -368,11 +372,11 @@ export function DictionaryView({
         </div>
       </div>
 
-      <div className="list word-grid" onScroll={handleDictionaryScroll}>
+      <div className="list word-grid">
         {bootstrapping && entries.length === 0 ? <LoadingState /> : null}
         {visibleEntries.map((entry) => (
           <div
-            className={`word-chip ${entry.kind === 'pending' ? 'pending-chip' : ''}`}
+            className="word-chip"
             key={entry.key}
             role="button"
             tabIndex={0}
@@ -384,26 +388,24 @@ export function DictionaryView({
           >
             <div className="word-primary">
               <span className="word-text">{entry.term}</span>
-              {entry.kind === 'pending' ? <span className={`status-badge status-${entry.word.status}`}>{pendingStatusLabel(entry.word.status)}</span> : null}
             </div>
             <span className="word-actions">
-              {entry.kind === 'remote' ? (
-                <button
-                  className="word-action danger"
-                  type="button"
-                  aria-label="删除"
-                  disabled={busy}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void deleteWord(entry);
-                  }}
-                >
-                  <TrashIcon />
-                </button>
-              ) : null}
+              <button
+                className="word-action danger"
+                type="button"
+                aria-label="删除"
+                disabled={busy}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void deleteWord(entry);
+                }}
+              >
+                <TrashIcon />
+              </button>
             </span>
           </div>
         ))}
+        {visibleWordCount < entries.length ? <div className="word-grid-sentinel" ref={loadMoreRef} /> : null}
         {!bootstrapping && entries.length === 0 ? <div className="empty-state">暂无词条</div> : null}
       </div>
 
@@ -455,7 +457,6 @@ export function DictionaryView({
               onError={(text) => onNotice({ kind: 'error', text })}
               onScanStart={() => setAutoImportLogs([])}
               onSuccess={(result) => {
-                setPendingWords(result.words);
                 setDialog(null);
                 onNotice({ kind: 'success', text: `已成功导入 ${result.accepted_count} 个词，后台同步中。` });
               }}
@@ -528,19 +529,16 @@ export function DictionaryView({
     </section>
   );
 
-  function applyDictionaryState(nextWords: typeless.DictionaryWord[], nextPending: typeless.PendingDictionaryWord[]) {
+  function applyDictionaryState(nextWords: typeless.DictionaryWord[]) {
     setWords(nextWords);
-    setPendingWords(nextPending);
   }
 
   async function hydrateCache() {
     try {
       const cache = await readDictionaryCache();
       setWords(cache.words ?? []);
-      setPendingWords(cache.pendingWords ?? []);
     } catch {
       setWords([]);
-      setPendingWords([]);
     }
   }
 }
@@ -595,19 +593,6 @@ function createOptimisticWord(term: string): typeless.DictionaryWord {
     replace: false,
     replace_targets: [],
   };
-}
-
-function pendingStatusLabel(status: string) {
-  switch (status) {
-    case 'pending':
-      return '待同步';
-    case 'syncing':
-      return '同步中';
-    case 'failed':
-      return '失败';
-    default:
-      return status;
-  }
 }
 
 function stringifyError(error: unknown) {

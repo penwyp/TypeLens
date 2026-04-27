@@ -5,7 +5,7 @@ export async function readDictionaryCache() {
   const cache = await GetDictionaryCache();
   return {
     words: cache.words ?? [],
-    pendingWords: (cache.pendingWords ?? []).filter((word) => word.status !== 'synced'),
+    pendingWords: (cache.pendingWords ?? []).filter((word) => word.status === 'pending' || word.status === 'syncing'),
   };
 }
 
