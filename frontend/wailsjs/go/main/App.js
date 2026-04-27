@@ -62,10 +62,6 @@ export function ResetDictionary(arg1, arg2) {
   return window['go']['main']['App']['ResetDictionary'](arg1, arg2);
 }
 
-export function SaveDictionaryCache(arg1) {
-  return window['go']['main']['App']['SaveDictionaryCache'](arg1);
-}
-
 export function SaveHistoryCache(arg1, arg2) {
   return window['go']['main']['App']['SaveHistoryCache'](arg1, arg2);
 }

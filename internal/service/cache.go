@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -56,6 +57,32 @@ func (s *Service) SaveHistoryCache(query HistoryQuery, records []typeless.Transc
 		}
 		store.Histories[historyCacheKey(query)] = cloneSlice(records)
 	})
+}
+
+func (s *Service) saveDictionaryCacheSnapshot(words []typeless.DictionaryWord, pendingWords []typeless.PendingDictionaryWord) error {
+	return s.SaveDictionaryCache(DictionaryCache{
+		Words:        cloneSlice(words),
+		PendingWords: cloneSlice(pendingWords),
+	})
+}
+
+func (s *Service) refreshDictionaryCache(ctx context.Context) (DictionaryCache, error) {
+	words, err := s.newDictionaryClient().ListAll(ctx)
+	if err != nil {
+		return DictionaryCache{}, err
+	}
+	pendingWords, err := typeless.LoadPendingDictionaryWords(s.config.AutoImportStatePath)
+	if err != nil {
+		return DictionaryCache{}, err
+	}
+	cache := DictionaryCache{
+		Words:        words,
+		PendingWords: pendingWords,
+	}
+	if err := s.SaveDictionaryCache(cache); err != nil {
+		return DictionaryCache{}, err
+	}
+	return cache, nil
 }
 
 func (s *Service) readCacheStore() (appCacheStore, error) {

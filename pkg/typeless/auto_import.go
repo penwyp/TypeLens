@@ -181,6 +181,24 @@ func ScanAutoImportCandidatesWithProgress(
 	return scanAutoImportCandidates(ctx, sources, existingTerms, pendingTerms, progressWriter)
 }
 
+func FilterAutoImportCandidates(
+	candidates []AutoImportCandidate,
+	existingTerms map[string]struct{},
+	pendingTerms map[string]struct{},
+) []AutoImportCandidate {
+	filtered := make([]AutoImportCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, ok := existingTerms[candidate.NormalizedTerm]; ok {
+			continue
+		}
+		if _, ok := pendingTerms[candidate.NormalizedTerm]; ok {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return limitAutoImportCandidates(filtered)
+}
+
 func scanAutoImportCandidates(
 	ctx context.Context,
 	sources []AutoImportSource,
@@ -270,17 +288,7 @@ func scanAutoImportCandidates(
 	emitAutoImportLog(progressWriter, "候选词提取完成，共 %d 个。", result.RawCandidates)
 	emitAutoImportLog(progressWriter, "正在与现有词典做差集过滤并进行质量排序。")
 
-	filtered := make([]AutoImportCandidate, 0, len(rawCandidates))
-	for _, candidate := range rawCandidates {
-		if _, ok := existingTerms[candidate.NormalizedTerm]; ok {
-			continue
-		}
-		if _, ok := pendingTerms[candidate.NormalizedTerm]; ok {
-			continue
-		}
-		filtered = append(filtered, candidate)
-	}
-	filtered = limitAutoImportCandidates(filtered)
+	filtered := FilterAutoImportCandidates(rawCandidates, existingTerms, pendingTerms)
 	result.FilteredCandidates = len(filtered)
 	result.Items = filtered
 	emitAutoImportLog(progressWriter, "差集过滤完成，最终候选词 %d 个。", result.FilteredCandidates)

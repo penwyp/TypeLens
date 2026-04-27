@@ -97,7 +97,11 @@ func (s *Service) SetConfig(config Config) {
 }
 
 func (s *Service) ListDictionary(ctx context.Context) ([]typeless.DictionaryWord, error) {
-	return s.newDictionaryClient().ListAll(ctx)
+	cache, err := s.refreshDictionaryCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return cache.Words, nil
 }
 
 func (s *Service) AddDictionaryTerm(ctx context.Context, term string) error {
@@ -105,7 +109,11 @@ func (s *Service) AddDictionaryTerm(ctx context.Context, term string) error {
 	if term == "" {
 		return fmt.Errorf("词条不能为空")
 	}
-	return s.newDictionaryClient().Add(ctx, term)
+	if err := s.newDictionaryClient().Add(ctx, term); err != nil {
+		return err
+	}
+	_, err := s.refreshDictionaryCache(ctx)
+	return err
 }
 
 func (s *Service) DeleteDictionaryWord(ctx context.Context, id string) error {
@@ -113,7 +121,11 @@ func (s *Service) DeleteDictionaryWord(ctx context.Context, id string) error {
 	if id == "" {
 		return fmt.Errorf("词条 ID 不能为空")
 	}
-	return s.newDictionaryClient().Delete(ctx, id)
+	if err := s.newDictionaryClient().Delete(ctx, id); err != nil {
+		return err
+	}
+	_, err := s.refreshDictionaryCache(ctx)
+	return err
 }
 
 func (s *Service) ImportDictionary(ctx context.Context, request ImportRequest) (typeless.ImportResult, error) {
@@ -126,19 +138,43 @@ func (s *Service) ImportDictionary(ctx context.Context, request ImportRequest) (
 		return typeless.ImportResult{}, err
 	}
 	writeProgressLog(request.LogWriter, "解析文件完成，共 %d 行。", len(terms))
-	writeProgressLog(request.LogWriter, "开始获取历史所有记录。")
-	return s.newDictionaryClient().ImportTerms(ctx, terms, typeless.ImportOptions{
+	cache, err := s.LoadDictionaryCache()
+	if err != nil {
+		return typeless.ImportResult{}, err
+	}
+	existingTerms := typeless.DictionaryTermSet(cache.Words)
+	for term := range typeless.PendingDictionaryTermSet(cache.PendingWords) {
+		existingTerms[term] = struct{}{}
+	}
+	result, err := s.newDictionaryClient().ImportTerms(ctx, terms, typeless.ImportOptions{
 		DryRun:         request.DryRun,
 		Concurrency:    request.Concurrency,
 		ProgressWriter: request.LogWriter,
+		ExistingTerms:  existingTerms,
 	})
+	if err != nil {
+		return result, err
+	}
+	if !request.DryRun {
+		if _, err := s.refreshDictionaryCache(ctx); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
 }
 
 func (s *Service) ClearDictionary(ctx context.Context, request ClearRequest) (int, error) {
-	return s.newDictionaryClient().Clear(ctx, typeless.ClearOptions{
+	deleted, err := s.newDictionaryClient().Clear(ctx, typeless.ClearOptions{
 		Concurrency:    request.Concurrency,
 		ProgressWriter: request.LogWriter,
 	})
+	if err != nil {
+		return deleted, err
+	}
+	if _, err := s.refreshDictionaryCache(ctx); err != nil {
+		return deleted, err
+	}
+	return deleted, nil
 }
 
 func (s *Service) ResetDictionary(ctx context.Context, request ResetRequest) (typeless.ResetResult, error) {
@@ -154,11 +190,17 @@ func (s *Service) ResetDictionary(ctx context.Context, request ResetRequest) (ty
 	} else {
 		writeProgressLog(request.LogWriter, "使用内置词表，共 %d 行。", len(terms))
 	}
-	writeProgressLog(request.LogWriter, "开始获取历史所有记录。")
-	return s.newDictionaryClient().Reset(ctx, terms, typeless.ResetOptions{
+	result, err := s.newDictionaryClient().Reset(ctx, terms, typeless.ResetOptions{
 		Concurrency:    request.Concurrency,
 		ProgressWriter: request.LogWriter,
 	})
+	if err != nil {
+		return result, err
+	}
+	if _, err := s.refreshDictionaryCache(ctx); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (s *Service) QueryHistory(ctx context.Context, query HistoryQuery) ([]typeless.TranscriptRecord, error) {

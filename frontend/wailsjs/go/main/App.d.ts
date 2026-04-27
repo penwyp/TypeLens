@@ -33,8 +33,6 @@ export function QueryHistory(arg1:service.HistoryQuery):Promise<Array<typeless.T
 
 export function ResetDictionary(arg1:string,arg2:number):Promise<typeless.ResetResult>;
 
-export function SaveDictionaryCache(arg1:service.DictionaryCache):Promise<void>;
-
 export function SaveHistoryCache(arg1:service.HistoryQuery,arg2:Array<typeless.TranscriptRecord>):Promise<void>;
 
 export function ScanAutoImportSources(arg1:service.AutoImportScanRequest):Promise<typeless.AutoImportScanResult>;

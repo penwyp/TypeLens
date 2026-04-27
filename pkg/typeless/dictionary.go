@@ -54,6 +54,7 @@ type ImportOptions struct {
 	DryRun         bool
 	Concurrency    int
 	ProgressWriter io.Writer
+	ExistingTerms  map[string]struct{}
 }
 
 type ClearOptions struct {
@@ -118,7 +119,6 @@ func (c *DictionaryClient) ListAll(ctx context.Context) ([]DictionaryWord, error
 }
 
 func (c *DictionaryClient) ImportTerms(ctx context.Context, terms []string, options ImportOptions) (ImportResult, error) {
-	writeImportLog(options.ProgressWriter, "开始读取远端词典，准备导入 %d 行输入。", len(terms))
 	uniqueTerms := uniqueTrimmedTerms(terms)
 	result := ImportResult{
 		TotalInput: len(terms),
@@ -128,20 +128,24 @@ func (c *DictionaryClient) ImportTerms(ctx context.Context, terms []string, opti
 		options.Concurrency = 1
 	}
 
-	existingWords, err := c.ListAll(ctx)
-	if err != nil {
-		return result, err
-	}
-	writeImportLog(options.ProgressWriter, "远端词典读取完成，共 %d 个已有词。", len(existingWords))
-	writeImportLog(options.ProgressWriter, "开始本地去重与差集过滤。")
-	existing := make(map[string]struct{}, len(existingWords))
-	for _, word := range existingWords {
-		key := normalizeDictionaryTermKey(word.Term)
-		if key == "" {
-			continue
+	existing := options.ExistingTerms
+	if existing == nil {
+		writeImportLog(options.ProgressWriter, "开始读取远端词典，准备导入 %d 行输入。", len(terms))
+		existingWords, err := c.ListAll(ctx)
+		if err != nil {
+			return result, err
 		}
-		existing[key] = struct{}{}
+		writeImportLog(options.ProgressWriter, "远端词典读取完成，共 %d 个已有词。", len(existingWords))
+		existing = make(map[string]struct{}, len(existingWords))
+		for _, word := range existingWords {
+			key := normalizeDictionaryTermKey(word.Term)
+			if key == "" {
+				continue
+			}
+			existing[key] = struct{}{}
+		}
 	}
+	writeImportLog(options.ProgressWriter, "开始本地去重与差集过滤。")
 
 	for _, term := range uniqueTerms {
 		if _, ok := existing[normalizeDictionaryTermKey(term)]; ok {
@@ -191,10 +195,9 @@ func (c *DictionaryClient) ImportTerms(ctx context.Context, terms []string, opti
 		})
 	}
 
-	err = group.Wait()
 	result.Imported = int(imported.Load())
 	result.Skipped += int(skipped.Load())
-	if err != nil {
+	if err := group.Wait(); err != nil {
 		return result, err
 	}
 	return result, nil

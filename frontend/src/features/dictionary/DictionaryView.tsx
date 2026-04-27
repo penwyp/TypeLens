@@ -13,7 +13,7 @@ import {
 } from '../../../wailsjs/go/main/App';
 import { typeless } from '../../../wailsjs/go/models';
 import { EventsOn } from '../../../wailsjs/runtime/runtime';
-import { readDictionaryCache, writeDictionaryCache } from '../../cache';
+import { readDictionaryCache } from '../../cache';
 import { Dialog, LogConsole } from '../../components/Dialog';
 import { AutoImportPanel } from './AutoImportPanel';
 
@@ -527,7 +527,6 @@ export function DictionaryView({
               onScanStart={() => setAutoImportLogs([])}
               onSuccess={(result) => {
                 setPendingWords(result.words);
-                void writeDictionaryCache(words, result.words);
                 setDialog(null);
                 onNotice({ kind: 'success', text: `已成功导入 ${result.accepted_count} 个词，后台同步中。` });
               }}
@@ -603,7 +602,6 @@ export function DictionaryView({
   function applyDictionaryState(nextWords: typeless.DictionaryWord[], nextPending: typeless.PendingDictionaryWord[]) {
     setWords(nextWords);
     setPendingWords(nextPending);
-    void writeDictionaryCache(nextWords, nextPending);
   }
 
   async function hydrateCache() {

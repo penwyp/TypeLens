@@ -43,10 +43,6 @@ func (a *App) GetDictionaryCache() (service.DictionaryCache, error) {
 	return a.service.LoadDictionaryCache()
 }
 
-func (a *App) SaveDictionaryCache(cache service.DictionaryCache) error {
-	return a.service.SaveDictionaryCache(cache)
-}
-
 func (a *App) GetHistoryCache(query service.HistoryQuery) ([]typeless.TranscriptRecord, error) {
 	return a.service.LoadHistoryCache(query)
 }
