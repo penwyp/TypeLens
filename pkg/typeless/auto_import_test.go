@@ -29,14 +29,12 @@ func TestParseClaudeProjectLine(t *testing.T) {
 
 func TestExtractTokensFromMessage(t *testing.T) {
 	tokens := extractTokensFromMessage("请处理 TypeLens、ClaudeProbe、agent_os 和自动导入逻辑")
-	for _, want := range []string{"TypeLens", "ClaudeProbe", "Claude", "Probe", "agent_os", "agent", "os"} {
+	for _, want := range []string{"TypeLens", "ClaudeProbe", "Claude", "Probe", "agent_os", "agent"} {
 		if !slices.Contains(tokens, want) {
 			t.Fatalf("tokens %v does not contain %q", tokens, want)
 		}
 	}
-	if !slices.ContainsFunc(tokens, func(token string) bool {
-		return len([]rune(token)) >= 4 && slices.Contains([]rune(token), '导')
-	}) {
+	if !slices.Contains(tokens, "导入") {
 		t.Fatalf("tokens %v does not contain expected Chinese candidate", tokens)
 	}
 }
@@ -77,5 +75,59 @@ func TestMergePendingCandidates(t *testing.T) {
 	}
 	if words[1].Term != "ClaudeProbe" || words[1].Status != AutoImportStatusPending {
 		t.Fatalf("unexpected merged word: %#v", words[1])
+	}
+}
+
+func TestRankAutoImportCandidatesDropsPlainEnglishNoise(t *testing.T) {
+	candidates := []AutoImportCandidate{
+		{Term: "update", NormalizedTerm: "update", Hits: 9},
+		{Term: "response", NormalizedTerm: "response", Hits: 8},
+		{Term: "TypeLens", NormalizedTerm: "typelens", Hits: 3},
+		{Term: "ClaudeProbe", NormalizedTerm: "claudeprobe", Hits: 2},
+		{Term: "agent_os", NormalizedTerm: "agent_os", Hits: 2},
+	}
+
+	ranked := rankAutoImportCandidates(candidates, 20)
+	got := make([]string, 0, len(ranked))
+	for _, item := range ranked {
+		got = append(got, item.NormalizedTerm)
+	}
+
+	for _, rejected := range []string{"update", "response"} {
+		if slices.Contains(got, rejected) {
+			t.Fatalf("ranked candidates unexpectedly contain %q: %v", rejected, got)
+		}
+	}
+	for _, expected := range []string{"typelens", "claudeprobe", "agent_os"} {
+		if !slices.Contains(got, expected) {
+			t.Fatalf("ranked candidates missing %q: %v", expected, got)
+		}
+	}
+}
+
+func TestRankAutoImportCandidatesKeepsOnlyTopLimit(t *testing.T) {
+	candidates := make([]AutoImportCandidate, 0, autoImportMaxFinalCandidates+20)
+	for index := 0; index < autoImportMaxFinalCandidates+20; index++ {
+		term := "ProjToken" + string(rune('A'+(index%26))) + string(rune('a'+((index/26)%26))) + string(rune('a'+((index/676)%26)))
+		candidates = append(candidates, AutoImportCandidate{
+			Term:           term,
+			NormalizedTerm: normalizeDictionaryTermKey(term),
+			Hits:           autoImportMaxFinalCandidates + 20 - index,
+		})
+	}
+
+	ranked := rankAutoImportCandidates(candidates, autoImportMaxFinalCandidates+100)
+	if len(ranked) != autoImportMaxFinalCandidates {
+		t.Fatalf("ranked len = %d, want %d", len(ranked), autoImportMaxFinalCandidates)
+	}
+	if ranked[0].Hits < ranked[len(ranked)-1].Hits {
+		t.Fatalf("ranked order is unexpected: first=%d last=%d", ranked[0].Hits, ranked[len(ranked)-1].Hits)
+	}
+}
+
+func TestExtractChineseCandidatesAvoidsLongSegmentExplosion(t *testing.T) {
+	tokens := extractChineseCandidates("自动导入预览结果")
+	if len(tokens) > 24 {
+		t.Fatalf("extractChineseCandidates() produced too many tokens: %d %#v", len(tokens), tokens)
 	}
 }

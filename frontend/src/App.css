@@ -766,6 +766,78 @@ button:disabled {
   max-height: 260px;
 }
 
+.auto-import-word-grid {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.auto-import-word-grid-compact {
+  max-height: 260px;
+}
+
+.auto-import-chip {
+  height: 52px;
+  padding: 10px 14px;
+  justify-content: flex-start;
+  border-radius: 12px;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+}
+
+.auto-import-chip-selected {
+  border-color: rgba(0, 112, 186, 0.34);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.auto-import-chip-unselected {
+  opacity: 0.64;
+  border-color: rgba(7, 21, 44, 0.12);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.auto-import-chip-readonly {
+  cursor: default;
+}
+
+.auto-import-chip-check,
+.auto-import-chip-count {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.auto-import-chip-check {
+  top: 9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(0, 112, 186, 0.12);
+  color: rgba(0, 48, 135, 0.84);
+  font-size: 11px;
+}
+
+.auto-import-chip-count {
+  bottom: 9px;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.8);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 11px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.auto-import-chip:hover .auto-import-chip-count,
+.auto-import-chip:focus-visible .auto-import-chip-count {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .candidate-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

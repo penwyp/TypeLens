@@ -8,6 +8,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/spf13/cobra v1.10.1
 	github.com/wailsapp/wails/v2 v2.12.0
+	github.com/yanyiwu/gojieba v1.4.7
 	golang.org/x/crypto v0.33.0
 	golang.org/x/sync v0.17.0
 )

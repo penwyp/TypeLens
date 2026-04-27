@@ -53,7 +53,7 @@ export function AutoImportPanel({ busy, logs, onError, onScanStart, onSuccess }:
     if (!keyword) {
       return items;
     }
-    return items.filter((item) => item.term.toLowerCase().includes(keyword) || item.examples.some((example) => example.toLowerCase().includes(keyword)));
+    return items.filter((item) => item.term.toLowerCase().includes(keyword));
   }, [scanResult, search]);
 
   const selectedItems = useMemo(() => {
@@ -190,23 +190,21 @@ export function AutoImportPanel({ busy, logs, onError, onScanStart, onSuccess }:
               <button className="ghost-button" type="button" onClick={() => toggleAll(false)}>全不选</button>
             </div>
           </div>
-          <div className="candidate-list">
+          <div className="list word-grid auto-import-word-grid">
             {filteredItems.map((item) => (
-              <label className="candidate-row" key={`${item.platform}-${item.normalized_term}`}>
-                <input
-                  className="candidate-checkbox"
-                  checked={selectedTerms[item.normalized_term] !== false}
-                  onChange={(event) => setSelectedTerms((current) => ({ ...current, [item.normalized_term]: event.target.checked }))}
-                  type="checkbox"
-                />
-                <div className="candidate-main">
-                  <div className="candidate-header">
-                    <strong>{item.term}</strong>
-                    <span className="candidate-meta">{sourceLabel(item.platform)} · {item.hits} 次</span>
-                  </div>
-                  <div className="candidate-example">{item.examples[0] ?? '无示例'}</div>
+              <button
+                className={`word-chip auto-import-chip ${selectedTerms[item.normalized_term] !== false ? 'auto-import-chip-selected' : 'auto-import-chip-unselected'}`}
+                key={`${item.platform}-${item.normalized_term}`}
+                type="button"
+                aria-pressed={selectedTerms[item.normalized_term] !== false}
+                onClick={() => setSelectedTerms((current) => ({ ...current, [item.normalized_term]: current[item.normalized_term] === false }))}
+              >
+                <div className="word-primary">
+                  <span className="word-text">{item.term}</span>
                 </div>
-              </label>
+                {selectedTerms[item.normalized_term] !== false ? <span className="auto-import-chip-check" aria-hidden="true">✓</span> : null}
+                <span className="auto-import-chip-count" aria-hidden="true">{item.hits} 次</span>
+              </button>
             ))}
             {filteredItems.length === 0 ? <div className="empty-state">没有可展示的候选词</div> : null}
           </div>
@@ -222,15 +220,11 @@ export function AutoImportPanel({ busy, logs, onError, onScanStart, onSuccess }:
           <div className="summary-box">
             即将导入 {selectedItems.length} 个词。确认后会先写入本地词典视图，再在后台逐步同步到远端词典。
           </div>
-          <div className="candidate-list compact">
+          <div className="list word-grid auto-import-word-grid auto-import-word-grid-compact">
             {selectedItems.map((item) => (
-              <div className="candidate-row compact" key={`${item.platform}-${item.normalized_term}`}>
-                <div className="candidate-main">
-                  <div className="candidate-header">
-                    <strong>{item.term}</strong>
-                    <span className="candidate-meta">{sourceLabel(item.platform)}</span>
-                  </div>
-                  <div className="candidate-example">{item.examples[0] ?? '无示例'}</div>
+              <div className="word-chip auto-import-chip auto-import-chip-readonly auto-import-chip-selected" key={`${item.platform}-${item.normalized_term}`}>
+                <div className="word-primary">
+                  <span className="word-text">{item.term}</span>
                 </div>
               </div>
             ))}

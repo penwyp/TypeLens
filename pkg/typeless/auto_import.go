@@ -7,18 +7,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
 
 	stdjson "encoding/json"
 
+	"github.com/yanyiwu/gojieba"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -34,11 +37,12 @@ const (
 )
 
 const (
-	autoImportMaxFiles          = 240
-	autoImportMaxLinesPerFile   = 8000
-	autoImportMaxMessageRunes   = 12000
-	autoImportMaxExamplesPerHit = 3
-	autoImportMaxLineBytes      = 32 * 1024 * 1024
+	autoImportMaxFiles           = 240
+	autoImportMaxLinesPerFile    = 8000
+	autoImportMaxMessageRunes    = 12000
+	autoImportMaxExamplesPerHit  = 3
+	autoImportMaxLineBytes       = 32 * 1024 * 1024
+	autoImportMaxFinalCandidates = 300
 )
 
 type AutoImportSource struct {
@@ -264,7 +268,7 @@ func scanAutoImportCandidates(
 		RawCandidates:  len(rawCandidates),
 	}
 	emitAutoImportLog(progressWriter, "候选词提取完成，共 %d 个。", result.RawCandidates)
-	emitAutoImportLog(progressWriter, "正在与现有词典做差集过滤。")
+	emitAutoImportLog(progressWriter, "正在与现有词典做差集过滤并进行质量排序。")
 
 	filtered := make([]AutoImportCandidate, 0, len(rawCandidates))
 	for _, candidate := range rawCandidates {
@@ -276,6 +280,7 @@ func scanAutoImportCandidates(
 		}
 		filtered = append(filtered, candidate)
 	}
+	filtered = rankAutoImportCandidates(filtered, summary.messages)
 	result.FilteredCandidates = len(filtered)
 	result.Items = filtered
 	emitAutoImportLog(progressWriter, "差集过滤完成，最终候选词 %d 个。", result.FilteredCandidates)
@@ -699,6 +704,8 @@ var (
 	englishTokenPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9._/-]*`)
 	urlPattern          = regexp.MustCompile(`(?i)^(https?://|www\.)`)
 	pathPattern         = regexp.MustCompile(`^([~./]|[A-Za-z]:\\)`)
+	autoImportJiebaOnce sync.Once
+	autoImportJieba     *gojieba.Jieba
 )
 
 var englishStopWords = map[string]struct{}{
@@ -708,6 +715,24 @@ var englishStopWords = map[string]struct{}{
 	"please": {}, "help": {}, "need": {}, "make": {}, "just": {}, "also": {}, "only": {}, "start": {},
 	"done": {}, "after": {}, "before": {}, "again": {}, "show": {}, "write": {}, "file": {}, "files": {},
 	"json": {}, "jsonl": {}, "text": {}, "user": {}, "assistant": {}, "input": {}, "output": {},
+	"code": {}, "task": {}, "issue": {}, "bug": {}, "fix": {}, "test": {}, "tests": {}, "build": {},
+	"update": {}, "remove": {}, "create": {}, "using": {}, "used": {}, "use": {}, "data": {}, "value": {},
+	"values": {}, "result": {}, "results": {}, "error": {}, "errors": {}, "request": {}, "response": {},
+	"client": {}, "server": {}, "local": {}, "remote": {}, "cache": {}, "state": {}, "import": {},
+	"export": {}, "sync": {}, "history": {}, "message": {}, "messages": {}, "string": {}, "number": {},
+	"boolean": {}, "object": {}, "array": {}, "list": {}, "items": {}, "item": {}, "content": {},
+	"true": {}, "false": {}, "null": {}, "undefined": {}, "const": {}, "func": {}, "function": {},
+	"class": {}, "method": {}, "variable": {}, "param": {}, "params": {}, "option": {}, "options": {},
+}
+
+var chineseNoiseFragments = []string{
+	"请处理", "继续处理", "帮我", "扫描", "输出", "看一下", "做好", "这里也有", "结果输出", "预览结果输出",
+}
+
+var chineseNoiseRunes = map[rune]struct{}{
+	'请': {}, '把': {}, '帮': {}, '我': {}, '你': {}, '他': {}, '她': {}, '它': {}, '们': {}, '的': {},
+	'了': {}, '和': {}, '并': {}, '再': {}, '又': {}, '在': {}, '将': {}, '就': {}, '给': {}, '看': {},
+	'一': {}, '下': {}, '吗': {}, '吧': {}, '啊': {},
 }
 
 func extractAutoImportCandidates(messages []autoImportMessage) []AutoImportCandidate {
@@ -886,36 +911,55 @@ func splitCamelCase(token string) []string {
 }
 
 func extractChineseCandidates(text string) []string {
-	runes := []rune(text)
-	results := make([]string, 0, 8)
-	for index := 0; index < len(runes); {
-		if !isChineseRune(runes[index]) {
-			index++
+	segments := autoImportChineseTokenizer().Cut(text, true)
+	results := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		token := normalizeChineseCandidate(segment)
+		if token == "" {
 			continue
 		}
-		start := index
-		for index < len(runes) && isChineseRune(runes[index]) {
-			index++
-		}
-		segment := runes[start:index]
-		if len(segment) < 2 {
-			continue
-		}
-		if len(segment) <= 8 {
-			results = append(results, string(segment))
-			continue
-		}
-		for size := 2; size <= 4; size++ {
-			for offset := 0; offset+size <= len(segment); offset++ {
-				results = append(results, string(segment[offset:offset+size]))
-			}
-		}
+		results = append(results, token)
 	}
 	return results
 }
 
 func isChineseRune(r rune) bool {
 	return unicode.Is(unicode.Han, r)
+}
+
+func autoImportChineseTokenizer() *gojieba.Jieba {
+	autoImportJiebaOnce.Do(func() {
+		autoImportJieba = gojieba.NewJieba()
+	})
+	return autoImportJieba
+}
+
+func normalizeChineseCandidate(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	value = strings.TrimFunc(value, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	if value == "" {
+		return ""
+	}
+	hasChinese := false
+	for _, r := range value {
+		if isChineseRune(r) {
+			hasChinese = true
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			continue
+		}
+		return ""
+	}
+	if !hasChinese {
+		return ""
+	}
+	return value
 }
 
 func isUsefulCandidateToken(original, normalized string) bool {
@@ -964,12 +1008,222 @@ func isUsefulCandidateToken(original, normalized string) bool {
 		return false
 	}
 	if hasChinese {
-		return len([]rune(original)) >= 2
+		length := len([]rune(original))
+		return length >= 2 && length <= 12
 	}
 	if asciiLetterCount < 2 && !hasUpper && !hasSeparator {
 		return false
 	}
+	if isPlainEnglishWord(original) && len([]rune(original)) <= 3 {
+		return false
+	}
 	return true
+}
+
+func rankAutoImportCandidates(candidates []AutoImportCandidate, totalMessages int) []AutoImportCandidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+	totalDocs := maxInt(totalMessages, 1)
+	type scoredCandidate struct {
+		candidate AutoImportCandidate
+		score     float64
+	}
+	scored := make([]scoredCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		score, ok := scoreAutoImportCandidate(candidate, totalDocs)
+		if !ok {
+			continue
+		}
+		scored = append(scored, scoredCandidate{
+			candidate: candidate,
+			score:     score,
+		})
+	}
+	slices.SortFunc(scored, func(left, right scoredCandidate) int {
+		switch {
+		case left.score != right.score:
+			if right.score > left.score {
+				return 1
+			}
+			return -1
+		case left.candidate.Hits != right.candidate.Hits:
+			return right.candidate.Hits - left.candidate.Hits
+		case left.candidate.Platform != right.candidate.Platform:
+			return strings.Compare(left.candidate.Platform, right.candidate.Platform)
+		default:
+			return strings.Compare(left.candidate.NormalizedTerm, right.candidate.NormalizedTerm)
+		}
+	})
+	limit := minInt(len(scored), autoImportMaxFinalCandidates)
+	ranked := make([]AutoImportCandidate, 0, limit)
+	for _, item := range scored[:limit] {
+		ranked = append(ranked, item.candidate)
+	}
+	return ranked
+}
+
+func scoreAutoImportCandidate(candidate AutoImportCandidate, totalDocs int) (float64, bool) {
+	metrics := classifyCandidateTerm(candidate.Term)
+	if metrics.reject {
+		return 0, false
+	}
+	if _, ok := englishStopWords[candidate.NormalizedTerm]; ok {
+		return 0, false
+	}
+	if metrics.chinese && isNoisyChineseCandidate(candidate.Term) {
+		return 0, false
+	}
+	if metrics.plainEnglish && candidate.Hits < 2 {
+		return 0, false
+	}
+	if metrics.chinese && metrics.length > 6 && candidate.Hits < 2 {
+		return 0, false
+	}
+
+	df := minInt(candidate.Hits, totalDocs)
+	idf := math.Log(1 + (float64(totalDocs-df)+0.5)/(float64(df)+0.5))
+	score := float64(candidate.Hits) * idf
+
+	switch {
+	case metrics.camelCase:
+		score *= 1.35
+	case metrics.hasUpper:
+		score *= 1.15
+	}
+	if metrics.hasSeparator {
+		score *= 1.2
+	}
+	if metrics.hasDigit && (metrics.english || metrics.chinese) {
+		score *= 1.1
+	}
+	if metrics.chinese {
+		switch {
+		case metrics.length <= 4:
+			score *= 1.2
+		case metrics.length <= 6:
+			score *= 1.05
+		default:
+			score *= 0.8
+		}
+	}
+	if metrics.plainEnglish {
+		score *= 0.6
+	}
+	if metrics.length >= 20 {
+		score *= 0.6
+	}
+	if metrics.separatorCount >= 3 {
+		score *= 0.7
+	}
+	return score, true
+}
+
+type autoImportTermMetrics struct {
+	length         int
+	separatorCount int
+	hasUpper       bool
+	hasLower       bool
+	hasDigit       bool
+	hasSeparator   bool
+	chinese        bool
+	english        bool
+	camelCase      bool
+	plainEnglish   bool
+	reject         bool
+}
+
+func classifyCandidateTerm(term string) autoImportTermMetrics {
+	runes := []rune(term)
+	metrics := autoImportTermMetrics{
+		length: len(runes),
+	}
+	for _, r := range runes {
+		switch {
+		case isChineseRune(r):
+			metrics.chinese = true
+		case unicode.IsUpper(r):
+			metrics.hasUpper = true
+			metrics.english = true
+		case unicode.IsLower(r):
+			metrics.hasLower = true
+			metrics.english = true
+		case unicode.IsDigit(r):
+			metrics.hasDigit = true
+		case r == '_' || r == '-' || r == '.' || r == '/':
+			metrics.hasSeparator = true
+			metrics.separatorCount++
+		default:
+			metrics.reject = true
+			return metrics
+		}
+	}
+	metrics.camelCase = metrics.hasUpper && metrics.hasLower && !metrics.hasSeparator
+	metrics.plainEnglish = isPlainEnglishWord(term)
+	if metrics.separatorCount >= 4 {
+		metrics.reject = true
+	}
+	if metrics.length > 32 {
+		metrics.reject = true
+	}
+	if metrics.plainEnglish && metrics.length > 24 {
+		metrics.reject = true
+	}
+	if metrics.hasDigit && !metrics.english && !metrics.chinese {
+		metrics.reject = true
+	}
+	return metrics
+}
+
+func isPlainEnglishWord(term string) bool {
+	if term == "" {
+		return false
+	}
+	for _, r := range term {
+		if r > unicode.MaxASCII || !unicode.IsLower(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func isNoisyChineseCandidate(term string) bool {
+	for _, fragment := range chineseNoiseFragments {
+		if strings.Contains(term, fragment) {
+			return true
+		}
+	}
+	runes := []rune(term)
+	if len(runes) == 0 {
+		return true
+	}
+	stopCount := 0
+	for _, r := range runes {
+		if _, ok := chineseNoiseRunes[r]; ok {
+			stopCount++
+		}
+	}
+	if _, ok := chineseNoiseRunes[runes[0]]; ok {
+		return true
+	}
+	if _, ok := chineseNoiseRunes[runes[len(runes)-1]]; ok {
+		return true
+	}
+	return stopCount >= 2
+}
+
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func LoadPendingDictionaryWords(path string) ([]PendingDictionaryWord, error) {
